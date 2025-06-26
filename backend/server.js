@@ -14,14 +14,15 @@ const cors = require('cors');
 const {
     createFranchiseReportTable,
     createSefazReportTable,
-    createTermosInseridosTable,
-    insertOrUpdateFranchiseReport, // Precisa ser importado para a rota /upload-report
-    insertSefazReportData,        // Pode ser usado para dados de teste se reativados
-    createConnection // Para a consulta combinada
+    // createTermosInseridosTable,
+    insertOrUpdateFranchiseReport,
+    insertSefazReportData,
+    createConnection
 } = require('./database');
 
 // Importa o processador de PDF
 const { processPdfAndSaveData } = require('./services/pdfProcessor');
+
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -38,37 +39,23 @@ const upload = multer({ storage: storage });
 // Caminho para o arquivo do banco de dados SQLite
 const dbPath = path.resolve(__dirname, process.env.DATABASE_PATH || './dados.db');
 
+// Função auxiliar para formatar a data como DD/MM/YYYY
+const formatDateToDDMMYYYY = (date) => {
+    if (!date) return '';
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}/${m}/${y}`;
+};
+
 // --- CRIAÇÃO DE TABELAS NA INICIALIZAÇÃO DO SERVIDOR ---
 const initializeDatabase = async () => {
     try {
         if (LOG_DEBUG) console.log('[SERVER-INIT] Inicializando banco de dados...');
         await createFranchiseReportTable();
         await createSefazReportTable();
-        await createTermosInseridosTable(); // Manter, pois ainda pode ser usada por outras lógicas
+        //       await createTermosInseridosTable();
         if (LOG_DEBUG) console.log('[SERVER-INIT] Banco de dados inicializado com sucesso.');
-
-        // --- REMOÇÃO DOS DADOS DE TESTE ---
-        // if (LOG_DEBUG) console.log('[SERVER-INIT] Tentando inserir dados de teste...');
-        // try {
-        //     await insertSefazReportData(
-        //         [['25/06/2025', 'CHAVEDEMDFE123456789012345678901234567890123456', 'TESTETERMO1', 'CHAVENFE123456789012345678901234567890123456', 'CTETEST1', 'NFE1']],
-        //         'VOOTESTE',
-        //         '25/06/2025'
-        //     );
-        //     if (LOG_DEBUG) console.log('[SERVER-INIT] Dado de teste (sefaz_report) inserido com sucesso.');
-        // } catch (e) {
-        //     console.error('[SERVER-INIT] ERRO ao inserir dado de teste (sefaz_report):', e.message);
-        // }
-        // try {
-        //     await insertOrUpdateFranchiseReport([
-        //         ['AWBTESTE1', 'CHAVECTE1234567890123456789012345678901234567', 'ORIGEMTESTE', 'DESTINOTESTE', 'DESTINATARIOTESTE', 'TOMADORTESTE', 'NOTASTESTE']
-        //     ]);
-        //     if (LOG_DEBUG) console.log('[SERVER-INIT] Dado de teste (franchise_report) inserido com sucesso.');
-        // } catch (e) {
-        //     console.error('[SERVER-INIT] ERRO ao inserir dado de teste (franchise_report):', e.message);
-        // }
-        // --- FIM DA REMOÇÃO ---
-
     } catch (error) {
         console.error('[SERVER-INIT] Falha crítica ao inicializar o banco de dados:', error.message);
         process.exit(1);
@@ -101,21 +88,23 @@ initializeDatabase().then(() => {
         }
 
         try {
-            const success = await processPdfAndSaveData(file.buffer, numeroVoo, dataRegistro);
-            // Contar os termos inseridos. Como clearTermosInseridosTable é chamado antes de cada PDF,
-            // podemos contar os termos recém-inseridos na tabela termos_inseridos
-            const conn = createConnection();
-            const count = await new Promise((resolve, reject) => {
-                conn.get('SELECT COUNT(*) AS total FROM termos_inseridos', (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row.total);
-                });
-            }).finally(() => conn.close());
+            // A função processPdfAndSaveData agora retorna um objeto com insertedCount, duplicateCount, etc.
+            const result = await processPdfAndSaveData(file.buffer, numeroVoo, dataRegistro);
 
-            if (success) {
-                res.status(200).json({ success: true, message: `PDF processado e ${count} termos salvos com sucesso!`, recordsProcessed: count });
+            const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
+
+            if (result.success) { // Verifica se processPdfAndSaveData indica sucesso
+                res.status(200).json({
+                    success: true,
+                    message: `Voo ${numeroVoo} do dia ${dataRegistro} processado com sucesso.`,
+                    recordsProcessed: result.insertedCount, // Quantidade de termos NOVOS inseridos
+                    additionalInfo: `Inseridos ${formatNumber(result.insertedCount)} notas. (${formatNumber(result.duplicateCount)} duplicidades ignoradas).`
+                    // A contagem de "termos" únicos pode ser mais complexa se não usarmos termos_inseridos.
+                    // Por enquanto, focaremos nas "notas" (linhas) que foram inseridas ou ignoradas.
+                });
             } else {
-                res.status(500).json({ success: false, message: 'Erro ao processar o PDF.' });
+                // Se processPdfAndSaveData retornar { success: false, message: '...' }
+                res.status(500).json({ success: false, message: result.message || 'Erro ao processar o PDF.' });
             }
         } catch (error) {
             console.error('[ERROR-SERVER] Erro na rota /api/upload-pdf:', error);
@@ -136,24 +125,38 @@ initializeDatabase().then(() => {
             const workbook = xlsx.read(buffer, { type: 'buffer' });
 
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            // O header: 1 faz com que a primeira linha seja considerada o cabeçalho e os dados comecem da segunda linha (range:1)
-            // se o cabeçalho não estiver mapeado corretamente, pode ser necessário ajustar o range
-            const jsonData = xlsx.utils.sheet_to_json(sheet, { header: 1, range: 0 }); // range: 0 para incluir todas as linhas, se o cabeçalho for B,D,I,J,N,T,BC
+            const jsonData = xlsx.utils.sheet_to_json(sheet, { header: 1, range: 0 });
 
             if (LOG_DEBUG) {
                 console.log('[DEBUG-SERVER] JSON data from XLSX (first 5 rows):', jsonData.slice(0, 5));
             }
 
-            // Colunas a serem exibidas (B, D, F, I, J, N, T, BC)
-            // Indices (0-indexed): B=1, D=3, F=5, I=8, J=9, N=13, T=19, BC=54
-            const columnsToExtract = [1, 3, 5, 8, 9, 13, 19, 54]; // Adicionado F (indice 5)
-            const headerRow = jsonData[0]; // Assume que a primeira linha é o cabeçalho
+            // Mapeamento Planilha para Banco:
+            // Banco: awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario
+            // Planilha: B, D, F, I, J, T, BC, N
+            // Indices (0-indexed):
+            // AWB: B (1) -> dado[0]
+            // chave_cte: D (3) -> dado[1]
+            // data_emissao: F (5) -> dado[2]
+            // origem: I (8) -> dado[3]
+            // destino: J (9) -> dado[4]
+            // tomador: T (19) -> dado[5]
+            // notas: BC (54) -> dado[6]
+            // destinatario: N (13) -> dado[7]
 
-            const processedData = jsonData.slice(1).map((row) => { // Pula o cabeçalho
-                // Mapear pelos índices das colunas
-                const mappedRow = columnsToExtract.map((colIndex) => row[colIndex] || '');
+            const columnsToExtractIndices = [1, 3, 5, 8, 9, 19, 54, 13];
+
+            const processedData = jsonData.slice(1).map((row) => { // Pula a primeira linha (cabeçalho)
+                const mappedRow = columnsToExtractIndices.map((colIndex) => {
+                    if (colIndex === 5 && typeof row[colIndex] === 'number') { // Coluna F para data_emissao
+                        const excelSerialDate = row[colIndex];
+                        const date = new Date((excelSerialDate - 25569) * 24 * 60 * 60 * 1000);
+                        return formatDateToDDMMYYYY(date);
+                    }
+                    return row[colIndex] || '';
+                });
                 return mappedRow;
-            }).filter(row => row.some(cell => cell !== '')); // Filtra linhas completamente vazias
+            }).filter(row => row.some(cell => cell !== ''));
 
             if (LOG_DEBUG) {
                 console.log('[DEBUG-SERVER] Selected data for DB insertion (first 5 processed rows):', processedData.slice(0, 5));
@@ -161,7 +164,6 @@ initializeDatabase().then(() => {
 
             await insertOrUpdateFranchiseReport(processedData);
 
-            // Contar os registros inseridos/atualizados
             const conn = createConnection();
             const count = await new Promise((resolve, reject) => {
                 conn.get('SELECT COUNT(*) AS total FROM franchise_report', (err, row) => {
@@ -170,11 +172,13 @@ initializeDatabase().then(() => {
                 });
             }).finally(() => conn.close());
 
-            console.log(`Dados do franchise report inseridos com sucesso! Total de registros na tabela: ${count}`);
+            const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
+
             res.status(200).json({
                 success: true,
-                message: `Dados importados com sucesso! ${count} registros na tabela.`,
-                recordsProcessed: count
+                message: `Dados importados com sucesso! ${formatNumber(processedData.length)} registros processados do arquivo.`,
+                recordsProcessed: processedData.length,
+                additionalInfo: `(${formatNumber(count)} registros no banco)`
             });
 
         } catch (error) {
@@ -188,44 +192,112 @@ initializeDatabase().then(() => {
 
     // API para consultar os dados combinados
     app.get('/api/combined-data-specific', async (req, res) => {
-        const { numeroVoo, dataRegistro } = req.query; // Captura parâmetros de query
+        const { numeroVoo, dataRegistro } = req.query;
         const { createConnection } = require('./database');
 
         let conn;
         try {
             conn = createConnection();
 
-            // Lógica para filtrar por data
             let whereClauses = [];
             let params = [];
 
-            // Adiciona filtro por número do voo, se fornecido
             if (numeroVoo && numeroVoo.trim() !== '') {
-                whereClauses.push('sefaz_report.numero_voo LIKE ?');
+                whereClauses.push('sr.numero_voo LIKE ?');
                 params.push(`%${numeroVoo.trim()}%`);
             }
 
-            // Adiciona filtro por data de registro, se fornecida. Assume formato DD/MM/YYYY
             if (dataRegistro && dataRegistro.trim() !== '') {
-                whereClauses.push('sefaz_report.data_registro = ?');
+                whereClauses.push('sr.data_registro = ?');
                 params.push(dataRegistro.trim());
             } else {
-                // Padrão: Últimos 2 dias até hoje
                 const today = new Date();
                 const twoDaysAgo = new Date();
                 twoDaysAgo.setDate(today.getDate() - 2);
 
-                // Formata as datas para DD/MM/YYYY
-                const formatDateToDDMMYYYY = (date) => {
+                const formatDateForQuery = (date) => {
                     const d = String(date.getDate()).padStart(2, '0');
                     const m = String(date.getMonth() + 1).padStart(2, '0');
                     const y = date.getFullYear();
-                    return `${d}/${m}/${y}`;
+                    return `${y}${m}${d}`; // Formato YYYYMMDD para comparação numérica
                 };
 
-                const todayFormatted = formatDateToDDMMYYYY(today);
-                const twoDaysAgoFormatted = formatDateToDDMMYYYY(twoDaysAgo);
+                const todayFormattedForQuery = formatDateForQuery(today);
+                const twoDaysAgoFormattedForQuery = formatDateForQuery(twoDaysAgo);
 
-                whereClauses.push('CAST(SUBSTR(sefaz_report.data_registro, 7, 4) AS INTEGER) * 10000 + CAST(SUBSTR(sefaz_report.data_registro, 4, 2) AS INTEGER) * 100 + CAST(SUBSTR(sefaz_report.data_registro, 1, 2) AS INTEGER) BETWEEN ? AND ?');
-                params.push(parseInt(twoDaysAgoFormatted.replace(/\//g, ''), 10)); // YYYYMMDD para comparação numérica
-     
+                whereClauses.push('CAST(SUBSTR(sr.data_registro, 7, 4) || SUBSTR(sr.data_registro, 4, 2) || SUBSTR(sr.data_registro, 1, 2) AS INTEGER) BETWEEN ? AND ?');
+                params.push(parseInt(twoDaysAgoFormattedForQuery, 10));
+                params.push(parseInt(todayFormattedForQuery, 10));
+            }
+
+            const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+            // Corrigido para LEFT JOIN e seleção de campos explícita
+            const query = `
+                SELECT
+                    sr.numero_termo,
+                    sr.numero_voo,
+                    sr.data_registro,
+                    sr.data_emissao AS sefaz_data_emissao,
+                    sr.chave_mdfe,
+                    sr.chave_nfe,
+                    sr.numero_cte,
+                    sr.numero_nfe,
+                    fr.awb,
+                    fr.chave_cte AS fr_chave_cte,
+                    fr.origem,
+                    fr.destino,
+                    fr.tomador,
+                    fr.destinatario,
+                    fr.notas,
+                    fr.data_emissao AS franchise_data_emissao
+                FROM sefaz_report AS sr
+                LEFT JOIN franchise_report AS fr
+                ON PRINTF('%09d', sr.numero_cte) = SUBSTR(fr.chave_cte, 26, 9)
+                ${whereString}
+                ORDER BY sr.data_registro DESC, sr.numero_termo ASC;
+            `;
+
+            if (LOG_DEBUG) {
+                console.log('[DEBUG-SERVER] Query Combined Data:', query);
+                console.log('[DEBUG-SERVER] Query Params Combined Data:', params);
+            }
+
+            const result = await new Promise((resolve, reject) => {
+                conn.all(query, params, (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows);
+                });
+            });
+
+            res.status(200).json(result);
+        } catch (error) {
+            console.error(`[ERROR-SERVER] Erro durante a consulta de dados combinados: ${error.message}`);
+            res.status(500).json({ success: false, message: 'Erro durante a consulta.' });
+        } finally {
+            if (conn) {
+                conn.close((err) => {
+                    if (err) console.error("[ERROR-SERVER] Erro ao fechar a conexão de dados combinados:", err.message);
+                });
+            }
+        }
+    });
+
+    function validateXlsx(req, res, next) {
+        const file = req.file;
+        if (!file || file.mimetype !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+            return res.status(400).json({ success: false, message: 'Formato de arquivo inválido. Por favor, envie um arquivo XLSX.' });
+        }
+        next();
+    }
+
+    app.listen(port, () => {
+        console.log(`Backend rodando em http://localhost:${port}`);
+        if (LOG_DEBUG) {
+            console.log(`Modo de Depuração (LOG_DEBUG_MODE) está ATIVO.`);
+        }
+    });
+}).catch(err => {
+    console.error('[SERVER-INIT] Falha crítica ao iniciar o servidor devido a erro no DB:', err);
+    process.exit(1);
+});

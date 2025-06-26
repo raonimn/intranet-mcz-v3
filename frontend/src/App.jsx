@@ -17,7 +17,7 @@ function App() {
                 <Link to="/">Home</Link>
                 <Link to="/importar-termos">Importar Termos</Link>
                 <Link to="/importar-report">Importar Franchise Report</Link>
-                <Link to="/dados-combinados">Ver Dados Combinados</Link>
+                <Link to="/dados-combinados">Verificar termos/AWBs</Link>
             </nav>
             <Routes>
                 <Route path="/" element={<Home />} />

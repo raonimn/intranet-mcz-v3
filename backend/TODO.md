@@ -1,3 +1,3 @@
-Adicionar o campo de data e destino da AWB (para ter o controle dos dados que forma registrados)
-Na importação dos dados do PDF, informar o VOO e a data do termo
-Ajustar a inserção dos dados
+Corrigir a tela de verificar os termos/AWBs
+    Inserir os filtros acima da tela em um componente, que não atualize toda hora, apenas ao clicar no botão;
+Corrigir o layout da aplicação, usando temas

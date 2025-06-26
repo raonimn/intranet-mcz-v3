@@ -7,10 +7,12 @@ function ImportReport() {
     const [selectedFile, setSelectedFile] = useState(null);
     const [message, setMessage] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [additionalMessage, setAdditionalMessage] = useState('');
 
     const handleFileChange = (event) => {
         setSelectedFile(event.target.files[0]);
-        setMessage(''); // Limpa a mensagem ao selecionar um novo arquivo
+        setMessage('');
     };
 
     const handleSubmit = async (event) => {
@@ -21,11 +23,14 @@ function ImportReport() {
             return;
         }
 
+        setIsLoading(true);
+        setMessage('');
+        setAdditionalMessage('');
+
         const formData = new FormData();
         formData.append('xlsx_file', selectedFile);
 
         try {
-            // A URL do backend é http://localhost:8080
             const response = await axios.post('http://localhost:8080/api/upload-report', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
@@ -33,12 +38,16 @@ function ImportReport() {
             });
             setMessage(response.data.message);
             setIsSuccess(response.data.success);
-            setSelectedFile(null); // Limpa o arquivo selecionado após o sucesso
-            event.target.reset(); // Reseta o formulário
+            setAdditionalMessage(response.data.additionalInfo || '');
+            setSelectedFile(null);
+            event.target.reset();
         } catch (error) {
             console.error('Erro ao fazer upload do XLSX:', error);
             setMessage(error.response?.data?.message || 'Erro ao processar o XLSX. Verifique o console.');
             setIsSuccess(false);
+            setAdditionalMessage('');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -63,11 +72,20 @@ function ImportReport() {
                         </div>
                     </div>
                 )}
-                <button type="submit">Processar Relatório</button>
+                <button type="submit" disabled={isLoading}>
+                    {isLoading ? (
+                        <>
+                            <span className="spinner"></span> Processando...
+                        </>
+                    ) : (
+                        'Processar Relatório'
+                    )}
+                </button>
 
                 {message && (
                     <p className={isSuccess ? 'message-success' : 'message-error'}>
                         {message}
+                        {isSuccess && additionalMessage && ` ${additionalMessage}`}
                     </p>
                 )}
             </form>

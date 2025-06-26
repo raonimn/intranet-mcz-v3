@@ -15,13 +15,13 @@ body {
 }
 
 .container {
-    margin: 20px auto; /* Centraliza e adiciona margem */
+    margin: 20px auto;
     padding: 20px;
     background-color: #fff;
     border-radius: 8px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 90%; /* Ajusta a largura */
-    max-width: 800px; /* Limita a largura máxima */
+    width: 90%;
+    max-width: 1200px; /* Aumentado para acomodar mais colunas */
 }
 
 h1, h2, h3 {
@@ -53,7 +53,7 @@ h1, h2, h3 {
 
 .button-container {
     display: flex;
-    flex-wrap: wrap; /* Permite quebrar linha em telas pequenas */
+    flex-wrap: wrap;
     justify-content: center;
     gap: 20px;
     margin-top: 30px;
@@ -68,10 +68,10 @@ h1, h2, h3 {
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.3s, border 0.3s;
-    min-width: 200px; /* Garante que os botões não fiquem muito pequenos */
+    min-width: 200px;
     text-align: center;
-    text-decoration: none; /* Para usar com Link do React Router */
-    display: inline-block; /* Para que padding e min-width funcionem */
+    text-decoration: none;
+    display: inline-block;
 }
 
 .import-button:hover {
@@ -90,7 +90,7 @@ form {
 }
 
 input[type=file] {
-    display: none; /* Esconde o input de arquivo padrão */
+    display: none;
 }
 
 label {
@@ -101,7 +101,7 @@ label {
     border-radius: 5px;
     cursor: pointer;
     transition: background 0.3s ease;
-    margin-top: 10px; /* Adiciona margem acima do label */
+    margin-top: 10px;
 }
 
 label:hover {
@@ -109,19 +109,28 @@ label:hover {
 }
 
 button[type="submit"] {
-    margin-top: 20px; /* Aumenta a margem superior */
-    padding: 12px 25px; /* Aumenta o padding */
+    margin-top: 20px;
+    padding: 12px 25px;
     background-color: #2ecc71;
     color: #fff;
     border: none;
     border-radius: 5px;
     cursor: pointer;
     transition: background 0.3s ease;
-    font-size: 1em; /* Ajusta o tamanho da fonte */
+    font-size: 1em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 button[type="submit"]:hover {
     background-color: #27ae60;
+}
+
+button[type="submit"]:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
 }
 
 #fileListContainer {
@@ -150,6 +159,7 @@ th, td {
     padding: 12px;
     border: 1px solid #ddd;
     text-align: left;
+    font-size: 0.85em; /* Ajustado para melhor visualização em mais colunas */
 }
 
 th {
@@ -166,7 +176,6 @@ tr:hover {
     background-color: #f5f5f5;
 }
 
-/* Mensagens de sucesso/erro */
 .message-success {
     color: green;
     font-weight: bold;
@@ -179,4 +188,19 @@ tr:hover {
     font-weight: bold;
     margin-top: 15px;
     text-align: center;
+}
+
+/* Estilos para o spinner */
+.spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top: 4px solid #fff;
+    width: 16px;
+    height: 16px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }

@@ -28,8 +28,44 @@ const app = express();
 const port = process.env.PORT || 8080;
 const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
 
+
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: function (origin, callback) {
+        // Permite requisições sem origem (ex: Postman, curl, arquivos locais)
+        if (!origin) return callback(null, true);
+
+        // Defina aqui o(s) padrão(ões) do(s) IP(s) da sua rede local.
+        // Substitua '192.168.1.' pelo seu padrão de IP real.
+        // O (:\d+)? permite que a URL inclua uma porta (ex: :5173)
+        const allowedIpPatterns = [
+            /^http:\/\/192\.168\.0\.\d{1,3}(:\d+)?$/, // Exemplo: http://192.168.1.X:5173
+            /^http:\/\/10\.0\.0\.\d{1,3}(:\d+)?$/,   // Exemplo: http://10.0.0.X:5173
+            /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/, // Exemplo: 172.16.0.0 a 172.31.255.255
+            // Inclua o localhost e 127.0.0.1 para testes locais na máquina do backend
+            /^http:\/\/localhost(:\d+)?$/,
+            /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+        ];
+
+        const isAllowed = allowedIpPatterns.some(pattern => {
+            // Adiciona um log para depuração do CORS
+            if (LOG_DEBUG) {
+                console.log(`[CORS-DEBUG] Checking origin: ${origin} against pattern: ${pattern}`);
+            }
+            return pattern.test(origin);
+        });
+
+        if (isAllowed) {
+            callback(null, true);
+        } else {
+            console.warn(`[CORS] Origem não permitida: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Métodos HTTP permitidos
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Adicionado X-Requested-With
+    credentials: true // Importante se você planeja usar cookies ou cabeçalhos de autorização
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -117,7 +153,7 @@ initializeDatabase().then(() => {
         const file = req.file;
 
         if (!file) {
-            return res.status(400).send('Nenhum arquivo enviado.');
+            return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado.' });
         }
 
         try {
@@ -132,17 +168,17 @@ initializeDatabase().then(() => {
             }
 
             // Mapeamento Planilha para Banco:
-            // Banco: awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario
+            // Banco: AWB (PK), chave_cte, data_emissao, origem, destino, tomador, notas, destinatario
             // Planilha: B, D, F, I, J, T, BC, N
             // Indices (0-indexed):
-            // AWB: B (1) -> dado[0]
-            // chave_cte: D (3) -> dado[1]
-            // data_emissao: F (5) -> dado[2]
-            // origem: I (8) -> dado[3]
-            // destino: J (9) -> dado[4]
-            // tomador: T (19) -> dado[5]
-            // notas: BC (54) -> dado[6]
-            // destinatario: N (13) -> dado[7]
+            // AWB: B (1)
+            // chave_cte: D (3)
+            // data_emissao: F (5)
+            // origem: I (8)
+            // destino: J (9)
+            // tomador: T (19)
+            // notas: BC (54)
+            // destinatario: N (13)
 
             const columnsToExtractIndices = [1, 3, 5, 8, 9, 19, 54, 13];
 
@@ -151,16 +187,22 @@ initializeDatabase().then(() => {
                     if (colIndex === 5 && typeof row[colIndex] === 'number') { // Coluna F para data_emissao
                         const excelSerialDate = row[colIndex];
                         const date = new Date((excelSerialDate - 25569) * 24 * 60 * 60 * 1000);
-                        return formatDateToDDMMYYYY(date);
+                        return formatDateToDDMMYYYY(date); // Use a função auxiliar já definida
                     }
                     return row[colIndex] || '';
                 });
                 return mappedRow;
-            }).filter(row => row.some(cell => cell !== ''));
+            }).filter(row => row.some(cell => cell !== '')); // Filtra linhas completamente vazias
 
             if (LOG_DEBUG) {
                 console.log('[DEBUG-SERVER] Selected data for DB insertion (first 5 processed rows):', processedData.slice(0, 5));
             }
+
+            // Vamos adicionar um log para o total de linhas a serem inseridas/atualizadas
+            if (LOG_DEBUG) {
+                console.log(`[DEBUG-SERVER] Total de linhas processadas do XLSX para inserção: ${processedData.length}`);
+            }
+
 
             await insertOrUpdateFranchiseReport(processedData);
 
@@ -182,15 +224,20 @@ initializeDatabase().then(() => {
             });
 
         } catch (error) {
-            console.error('[ERROR-SERVER] Erro ao processar arquivo XLSX:', error.message);
+            // Log detalhado do erro, incluindo o stack trace
+            console.error(`[ERROR-SERVER] Erro fatal ao processar arquivo XLSX: ${error.message}`);
+            if (error.stack) {
+                console.error('[ERROR-SERVER] Stack trace:', error.stack);
+            }
             res.status(500).json({
                 success: false,
-                message: 'Erro ao processar arquivo: ' + error.message
+                message: 'Erro ao processar arquivo: ' + (error.message || 'Erro desconhecido.')
             });
         }
     });
 
     // API para consultar os dados combinados
+    // API para consultar os dados combinados (tabela principal)
     app.get('/api/combined-data-specific', async (req, res) => {
         const { numeroVoo, dataRegistro } = req.query;
         const { createConnection } = require('./database');
@@ -219,7 +266,7 @@ initializeDatabase().then(() => {
                     const d = String(date.getDate()).padStart(2, '0');
                     const m = String(date.getMonth() + 1).padStart(2, '0');
                     const y = date.getFullYear();
-                    return `${y}${m}${d}`; // Formato YYYYMMDD para comparação numérica
+                    return `${y}${m}${d}`;
                 };
 
                 const todayFormattedForQuery = formatDateForQuery(today);
@@ -232,7 +279,6 @@ initializeDatabase().then(() => {
 
             const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-            // Corrigido para LEFT JOIN e seleção de campos explícita
             const query = `
                 SELECT
                     sr.numero_termo,
@@ -283,6 +329,85 @@ initializeDatabase().then(() => {
         }
     });
 
+    // --- NOVA ROTA: Contagem de AWBs por Destino ---
+    app.get('/api/awbs-by-destination', async (req, res) => {
+        const conn = createConnection();
+        try {
+            const query = `
+                SELECT destino, COUNT(awb) AS total_awbs
+                FROM franchise_report
+                GROUP BY destino
+                ORDER BY destino ASC;
+            `;
+            const result = await new Promise((resolve, reject) => {
+                conn.all(query, (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows);
+                });
+            });
+            res.status(200).json(result);
+        } catch (error) {
+            console.error(`[ERROR-SERVER] Erro ao buscar AWBs por destino: ${error.message}`);
+            res.status(500).json({ success: false, message: 'Erro ao buscar AWBs por destino.' });
+        } finally {
+            if (conn) conn.close();
+        }
+    });
+
+    // --- NOVA ROTA: Datas Faltantes por Destino ---
+    app.get('/api/missing-dates', async (req, res) => {
+        const conn = createConnection();
+        try {
+            const missingDatesByDestination = {};
+            const today = new Date();
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(today.getDate() - 29); // 30 dias incluindo hoje
+
+            const allDestinations = await new Promise((resolve, reject) => {
+                conn.all('SELECT DISTINCT destino FROM franchise_report ORDER BY destino ASC;', (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows.map(row => row.destino));
+                });
+            });
+
+            for (const destino of allDestinations) {
+                missingDatesByDestination[destino] = [];
+                const presentDatesRaw = await new Promise((resolve, reject) => {
+                    conn.all('SELECT DISTINCT data_emissao FROM franchise_report WHERE destino = ?;', [destino], (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows.map(row => row.data_emissao));
+                    });
+                });
+
+                // Converter para formato YYYYMMDD para comparação
+                const presentDatesFormatted = new Set(
+                    presentDatesRaw.map(dateStr => {
+                        if (!dateStr || dateStr.length !== 10 || dateStr.indexOf('/') === -1) {
+                            return null; // Ignora datas inválidas
+                        }
+                        const [d, m, y] = dateStr.split('/');
+                        return `${y}${m}${d}`;
+                    }).filter(Boolean) // Remove nulos
+                );
+
+                for (let d = new Date(thirtyDaysAgo); d <= today; d.setDate(d.getDate() + 1)) {
+                    const formattedDate = formatDateToDDMMYYYY(d);
+                    const formattedDateForComparison = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+
+                    if (!presentDatesFormatted.has(formattedDateForComparison)) {
+                        missingDatesByDestination[destino].push(formattedDate);
+                    }
+                }
+            }
+            res.status(200).json(missingDatesByDestination);
+        } catch (error) {
+            console.error(`[ERROR-SERVER] Erro ao buscar datas faltantes: ${error.message}`);
+            res.status(500).json({ success: false, message: 'Erro ao buscar datas faltantes.' });
+        } finally {
+            if (conn) conn.close();
+        }
+    });
+
     function validateXlsx(req, res, next) {
         const file = req.file;
         if (!file || file.mimetype !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
@@ -291,8 +416,8 @@ initializeDatabase().then(() => {
         next();
     }
 
-    app.listen(port, () => {
-        console.log(`Backend rodando em http://localhost:${port}`);
+    app.listen(port, '0.0.0.0', () => {
+        console.log(`Backend rodando em http://0.0.0.0:${port}`);
         if (LOG_DEBUG) {
             console.log(`Modo de Depuração (LOG_DEBUG_MODE) está ATIVO.`);
         }

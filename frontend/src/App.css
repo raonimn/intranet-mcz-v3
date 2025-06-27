@@ -14,21 +14,17 @@ body {
     min-height: 100vh;
 }
 
+/* Os estilos .container e de texto (h1, h2, h3) serão majoritariamente gerenciados pelo Bootstrap,
+   mas você pode manter algumas personalizações se quiser. */
 .container {
-    margin: 20px auto;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 90%;
-    max-width: 1200px; /* Aumentado para acomodar mais colunas */
+    /* Remova ou ajuste larguras e sombras se Bootstrap já as define. */
 }
 
 h1, h2, h3 {
-    color: #333;
-    text-align: center;
-    text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.1);
-    margin-bottom: 20px;
+    color: #333; /* Mantém a cor */
+    text-align: center; /* Mantém o alinhamento */
+    text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.1); /* Mantém a sombra */
+    margin-bottom: 20px; /* Ajuste conforme a necessidade de espaçamento Bootstrap */
 }
 
 .navbar {
@@ -94,6 +90,7 @@ input[type=file] {
 }
 
 label {
+    /* Muitos desses estilos serão sobrescritos ou substituídos pelo Bootstrap form-label/btn */
     display: inline-block;
     background-color: #3498db;
     color: #fff;
@@ -108,10 +105,11 @@ label:hover {
     background-color: #2980b9;
 }
 
+/* Botões de submit (geral, podem ser ajustados para usar classes Bootstrap como .btn .btn-success) */
 button[type="submit"] {
     margin-top: 20px;
     padding: 12px 25px;
-    background-color: #2ecc71;
+    background-color: #2ecc71; /* Cor de exemplo, use .btn-success do Bootstrap */
     color: #fff;
     border: none;
     border-radius: 5px;
@@ -148,33 +146,18 @@ button[type="submit"]:disabled {
     font-style: italic;
 }
 
+/* Estilos de tabela serão majoritariamente Bootstrap (.table, .table-striped, etc.) */
 table {
-    width: 100%;
-    margin: 20px auto;
-    border-collapse: collapse;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    /* Remova estilos customizados para usar Bootstrap */
 }
 
 th, td {
-    padding: 12px;
-    border: 1px solid #ddd;
-    text-align: left;
-    font-size: 0.85em; /* Ajustado para melhor visualização em mais colunas */
+    /* Remova estilos customizados para usar Bootstrap */
 }
 
-th {
-    background-color: #4CAF50;
-    color: white;
-    text-align: center;
-}
-
-tr:nth-child(even) {
-    background-color: #f9f9f9;
-}
-
-tr:hover {
-    background-color: #f5f5f5;
-}
+/* th { ... } */
+/* tr:nth-child(even) { ... } */
+/* tr:hover { ... } */
 
 .message-success {
     color: green;

@@ -178,8 +178,9 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
 
     const formatNumber = (num) => new Intl.NumberFormat("pt-BR").format(num);
 
-    const totalAwbsCalculated = awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0);
-
+    const totalAwbsCalculated = Array.isArray(awbsByDestination) // Adicionada verificação
+        ? awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0)
+        : 0; // Se não for um array, o total é 0 para evitar o erro
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
     const currentItems = filteredLocalData.slice(indexOfFirstItem, indexOfLastItem);

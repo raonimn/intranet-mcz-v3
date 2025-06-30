@@ -1,0 +1,71 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  mysql_db:
+    image: mysql:8.0 # Versão do MySQL, pode ajustar conforme necessário
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD} # Senha do root do MySQL (do seu .env)
+      MYSQL_DATABASE: ${DB_NAME}               # Nome do banco de dados (do seu .env)
+      MYSQL_USER: ${DB_USER}                   # Usuário do banco de dados (do seu .env)
+      MYSQL_PASSWORD: ${DB_PASSWORD}           # Senha do usuário (do seu .env)
+    volumes:
+      - mysql_data:/var/lib/mysql # Persiste os dados do MySQL
+    ports:
+      - "3306:3306" # Mapeia a porta 3306 do host para a 3306 do contêiner
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: . # O contexto é a raiz do projeto
+      dockerfile: Dockerfile.backend # Nome do Dockerfile específico para o backend
+    ports:
+      - "8080:8080" # Mapeia a porta 8080 do host para a 8080 do contêiner
+    environment:
+      # Variáveis de ambiente para o backend
+      PORT: 8080
+      DATABASE_PATH: ./dados.db # Caminho do banco de dados SQLite dentro do contêiner do backend
+      # As variáveis do MySQL, se o backend for se conectar ao MySQL_DB
+      # ATENÇÃO: No seu código atual, o backend usa SQLite. Se você planeja migrar para MySQL,
+      # precisará ajustar a lógica de conexão no backend. Por enquanto, o SQLite estará dentro do contêiner do backend.
+      # Se você for usar o SQLite e persistir ele fora do contêiner, adicione:
+      # - ./dados.db:/app/dados.db
+      LOG_DEBUG_MODE: "true" # Ou "false"
+      # Para o CORS, certifique-se de que a URL do frontend esteja na lista permitida
+      # Ex: http://localhost ou http://localhost:80
+    depends_on:
+      - mysql_db # Garante que o MySQL_DB suba antes do backend
+    volumes:
+      - ./backend:/app/backend # Mapeia a pasta 'backend' do host para '/app/backend' no contêiner (útil para desenvolvimento)
+      - ./dados.db:/app/dados.db # Persiste o arquivo SQLite fora do contêiner (RECOMENDADO para SQLite)
+    networks:
+      - app-network
+    # Use "npm start" se tiver um script no package.json, caso contrário "node server.js"
+    # command: npm start
+
+  frontend:
+    build:
+      context: . # O contexto é a raiz do projeto
+      dockerfile: Dockerfile.frontend # Nome do Dockerfile específico para o frontend
+    ports:
+      - "80:80" # Mapeia a porta 80 do host para a 80 do contêiner
+      - "5173:5173" # Se você ainda usa o Vite dev server (para desenvolvimento local)
+    environment:
+      # Variáveis de ambiente para o frontend
+      # ATENÇÃO: O VITE_BACKEND_URL deve apontar para o serviço do backend dentro da rede Docker
+      VITE_BACKEND_URL: http://backend:8080 # 'backend' é o nome do serviço do seu backend no Docker Compose
+    depends_on:
+      - backend # Garante que o backend suba antes do frontend
+    volumes:
+      - ./frontend:/app/frontend # Mapeia a pasta 'frontend' do host para '/app/frontend' no contêiner (útil para desenvolvimento)
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mysql_data: # Volume nomeado para persistir dados do MySQL

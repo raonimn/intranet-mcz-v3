@@ -310,7 +310,7 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
                     <div className="col-md-4 mb-3 mb-md-0">
                         <div className="card h-100">
                             <div className="card-header">
-                                <h5 className="mb-0">Registros no Banco (AWBs por Destino)</h5>
+                                <h5 className="mb-0">AWBs no banco</h5>
                             </div>
                             <div className="card-body" style={{ maxHeight: "300px", overflowY: "auto" }}>
                                 <ul className="list-group list-group-flush">
@@ -368,11 +368,11 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
                     <div className="col-md-4">
                         <div className="card h-100">
                             <div className="card-header">
-                                <h5 className="mb-0">Malha de Voos (Próxima Funcionalidade)</h5>
+                                <h5 className="mb-0">Acompanhamento de Voos (Próxima Funcionalidade)</h5>
                             </div>
                             <div className="card-body d-flex flex-column justify-content-center align-items-center">
                                 <p className="text-muted text-center">
-                                    Conteúdo da malha de voos será exibido aqui.
+                                    Conteúdo da dos voos será exibido aqui.
                                 </p>
                                 <p className="text-muted text-center small">
                                     (Funcionalidade em desenvolvimento)
@@ -386,13 +386,9 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
                 </div>
             )}
 
-            <h2 className="text-center mb-4">
-                Resultado dos Termos da SEFAZ Importados
-            </h2>
-
             <div className="card mb-4">
                 <div className="card-header text-center">
-                    <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>
+                    <h5 className="mb-0">Filtro dos resultados da tabela</h5>
                 </div>
                 <div className="card-body">
                     <div className="d-flex flex-wrap align-items-center justify-content-center gap-3">

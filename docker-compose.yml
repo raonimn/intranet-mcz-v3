@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   mysql_db:
-    image: mysql:8.0 # Versão do MySQL, pode ajustar conforme necessário
+    image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
@@ -16,13 +16,12 @@ services:
       - "3306:3306"
     networks:
       - app-network
-    # --- ADIÇÃO: Healthcheck para MySQL ---
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s # Dá um tempo inicial para o MySQL subir antes de começar os testes
+      start_period: 30s
 
   backend:
     build:
@@ -32,22 +31,18 @@ services:
       - "8080:8080"
     environment:
       PORT: 8080
-      DB_HOST: mysql_db # Host do MySQL dentro da rede Docker
+      DB_HOST: mysql_db
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
       LOG_DEBUG_MODE: "true"
-    # --- ALTERAÇÃO: depends_on agora espera por service_healthy ---
     depends_on:
       mysql_db:
-        condition: service_healthy # Garante que o backend só suba quando o mysql_db estiver saudável
+        condition: service_healthy
     volumes:
       - ./backend:/app/backend
-      # Se você vai usar SQLite, este volume é crucial para persistência
-      # - ./dados.db:/app/dados.db
     networks:
       - app-network
-    # command: npm start # Descomente e ajuste se necessário, baseado no seu backend/package.json
 
   frontend:
     build:
@@ -55,13 +50,17 @@ services:
       dockerfile: Dockerfile.frontend
     ports:
       - "80:80"
-      - "5173:5173" # Opcional para dev local
+      - "5173:5173" # Opcional, para desenvolvimento local se precisar
     environment:
-      VITE_BACKEND_URL: http://backend:8080
+      # ALTERAÇÃO CRUCIAL AQUI: Usar o IP público do seu servidor
+      # Este IP será o hostname que o navegador do cliente usará para se conectar ao backend.
+      # Se o backend também precisa fazer requisições para si mesmo (raro para seu caso),
+      # ou para outros serviços do compose, isso não afetaria.
+      VITE_BACKEND_URL: http://192.168.0.217:8080 # <-- USE O IP REAL DO SEU SERVIDOR AQUI
     depends_on:
-      - backend # Ainda depende apenas da inicialização do backend
+      - backend
     volumes:
-      - ./frontend:/app/frontend
+      - ./frontend:/app/frontend # Manter para desenvolvimento
     networks:
       - app-network
 

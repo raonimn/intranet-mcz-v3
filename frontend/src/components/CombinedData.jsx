@@ -6,6 +6,7 @@ import { faCopy } from '@fortawesome/free-solid-svg-icons';
 import Toast from 'react-bootstrap/Toast';
 import ToastContainer from 'react-bootstrap/ToastContainer';
 import ImportActions from './ImportActions';
+import * as XLSX from 'xlsx'; // Importar xlsx para exportar para Excel
 
 // Função auxiliar para máscara de data (mantida)
 const applyDateMask = (value) => {
@@ -18,7 +19,7 @@ const applyDateMask = (value) => {
     return value;
 };
 
-// TooltipWrapper (mantido como está, ele já usa os atributos data-bs-*)
+// TooltipWrapper (mantido)
 const TooltipWrapper = ({ children, title }) => {
     return (
         <span data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title={title} title={title}>
@@ -27,22 +28,24 @@ const TooltipWrapper = ({ children, title }) => {
     );
 };
 
-// CombinedData agora recebe `props` e `ref`
 function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
-    const [data, setData] = useState([]);
-    const [cardsLoading, setCardsLoading] = useState(true); // Novo estado para carregamento dos cards
-    const [tableLoading, setTableLoading] = useState(false); // Novo estado para carregamento da tabela
+    const [fullData, setFullData] = useState([]); // Dados brutos carregados do backend
+    const [filteredLocalData, setFilteredLocalData] = useState([]); // Dados filtrados localmente
+    const [cardsLoading, setCardsLoading] = useState(true);
+    const [tableLoading, setTableLoading] = useState(false);
     const [error, setError] = useState(null);
 
     const [awbsByDestination, setAwbsByDestination] = useState([]);
     const [missingDates, setMissingDates] = useState({});
 
-    const [isProcessing, setIsProcessing] = useState(false); // Estado para o overlay de importação
+    const [isProcessing, setIsProcessing] = useState(false);
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
-    // Estados para Paginação (Funcionalidade 6)
+    // Novo estado para o filtro genérico (Funcionalidade 7)
+    const [generalFilter, setGeneralFilter] = useState('');
+
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage] = useState(50); // 50 registros por página
+    const [itemsPerPage] = useState(50);
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -50,13 +53,9 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         setToast({ show: true, title, message, type });
     }, []);
 
-    // A inicialização dos tooltips é feita automaticamente pelo Bootstrap com data-bs-*
-
     const fetchAwbsByDestination = useCallback(async () => {
         try {
-            const response = await axios.get(
-                `${BACKEND_URL}/api/awbs-by-destination`
-            );
+            const response = await axios.get(`${BACKEND_URL}/api/awbs-by-destination`);
             setAwbsByDestination(response.data);
         } catch (err) {
             console.error("Erro ao buscar AWBs por destino:", err);
@@ -75,7 +74,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     }, [BACKEND_URL, showAppToast]);
 
     const fetchData = useCallback(async () => {
-        setTableLoading(true); // Ativa o spinner da tabela
+        setTableLoading(true);
         setError(null);
         try {
             const queryParams = new URLSearchParams();
@@ -91,15 +90,15 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             if (filters.termo && filters.termo.trim()) {
                 queryParams.append("numeroTermo", filters.termo.trim());
             }
-            if (filters.destino && filters.destino.trim()) { // Agora é exato no backend
+            if (filters.destino && filters.destino.trim()) {
                 queryParams.append("destino", filters.destino.trim());
             }
 
             const response = await axios.get(
                 `${BACKEND_URL}/api/combined-data-specific?${queryParams.toString()}`
             );
-            setData(response.data);
-            setCurrentPage(1); // Resetar para a primeira página ao aplicar novos filtros
+            setFullData(response.data); // Salvar os dados brutos
+            setCurrentPage(1);
         } catch (err) {
             setError(
                 "Erro ao buscar os dados: " +
@@ -108,18 +107,16 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             console.error("Erro ao buscar dados combinados:", err);
             showAppToast('Erro', `Falha ao carregar dados combinados: ${err.response?.data?.message || err.message}`, 'danger');
         } finally {
-            setTableLoading(false); // Desativa o spinner da tabela
+            setTableLoading(false);
         }
     }, [filters, BACKEND_URL, showAppToast]);
 
-    // handleProcessingChange agora lida com o overlay de importação e atualiza cards/tabela
     const handleProcessingChange = useCallback((processing, type, extractedData) => {
-        setIsProcessing(processing); // Controla o overlay global
-        if (!processing) { // Se o processamento finalizou
-            // Recarregar TUDO (tabela e cards de sumário) apenas após uma importação
-            fetchData(); // Atualiza a tabela com os filtros atuais
-            fetchAwbsByDestination(); // Atualiza dados dos cards
-            fetchMissingDates(); // Atualiza dados dos cards
+        setIsProcessing(processing);
+        if (!processing) {
+            fetchData(); // Recarrega a tabela com os filtros atuais
+            fetchAwbsByDestination(); // Recarrega dados dos cards
+            fetchMissingDates(); // Recarrega dados dos cards
 
             if (type === 'termos' && extractedData) {
                 onTermosImported('extractedTerms', extractedData);
@@ -128,21 +125,35 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     }, [fetchData, fetchAwbsByDestination, fetchMissingDates, onTermosImported]);
 
 
-    // useEffect para buscar dados da tabela apenas quando os filtros mudam
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
-    // useEffect para buscar dados dos cards de sumário apenas na montagem inicial
     useEffect(() => {
-        setCardsLoading(true); // Ativa o spinner dos cards na montagem
+        setCardsLoading(true);
         Promise.all([
             fetchAwbsByDestination(),
             fetchMissingDates()
         ]).finally(() => {
-            setCardsLoading(false); // Desativa o spinner dos cards
+            setCardsLoading(false);
         });
     }, [fetchAwbsByDestination, fetchMissingDates]);
+
+    // Efeito para aplicar o filtro genérico localmente (Funcionalidade 7)
+    useEffect(() => {
+        if (!generalFilter.trim()) {
+            setFilteredLocalData(fullData);
+        } else {
+            const lowerCaseFilter = generalFilter.toLowerCase();
+            const filtered = fullData.filter(row =>
+                Object.values(row).some(value =>
+                    String(value).toLowerCase().includes(lowerCaseFilter)
+                )
+            );
+            setFilteredLocalData(filtered);
+            setCurrentPage(1); // Resetar paginação ao filtrar localmente
+        }
+    }, [generalFilter, fullData]);
 
 
     const copyToClipboard = useCallback(async (text, type) => {
@@ -168,10 +179,11 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
 
     const totalAwbsCalculated = awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0);
 
+    // Paginação agora baseada em filteredLocalData
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = data.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(data.length / itemsPerPage);
+    const currentItems = filteredLocalData.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(filteredLocalData.length / itemsPerPage);
 
     const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
@@ -209,10 +221,43 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         showTermosModal: () => importActionsInternalRef.current.showTermosModal(),
     }));
 
+    // Função para exportar os dados filtrados para Excel (Funcionalidade 7)
+    const exportToExcel = () => {
+        if (!filteredLocalData || filteredLocalData.length === 0) {
+            showAppToast('Aviso', 'Não há dados para exportar.', 'warning');
+            return;
+        }
+
+        // Mapear os dados para um formato legível para o Excel, mantendo a ordem das colunas
+        const dataForExport = filteredLocalData.map(row => ({
+            "Termo": row.numero_termo || "N/A",
+            "Dt Termo": row.data_registro || "N/A",
+            "AWB": row.awb || "N/A",
+            "Emissão FR": row.franchise_data_emissao || "N/A",
+            "Origem": row.origem || "N/A",
+            "Destino": row.destino || "N/A",
+            "Tomador": row.tomador || "N/A",
+            "Destinatário": row.destinatario || "N/A",
+            "Voo": row.numero_voo || "N/A",
+            "Chave NFe": row.chave_nfe || "N/A",
+            "Chave MDFe": row.chave_mdfe || "N/A",
+            "Nº CT-e": row.numero_cte || "N/A", // Adicionado, embora não visível na tabela padrão
+            "Nº NFe": row.numero_nfe || "N/A", // Adicionado
+            "Dt Emissão SEFAZ": row.sefaz_data_emissao || "N/A", // Adicionado
+            "Chave CT-e FR": row.fr_chave_cte || "N/A", // Adicionado
+            "Notas FR": row.notas || "N/A" // Adicionado
+        }));
+
+
+        const ws = XLSX.utils.json_to_sheet(dataForExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Dados_Termos_AWB");
+        XLSX.writeFile(wb, "dados_termos_awb.xlsx");
+        showAppToast('Sucesso', 'Dados exportados para Excel!', 'success');
+    };
 
     return (
         <div className={`container my-4 ${isSidebarOpen ? 'content-shifted' : ''}`}>
-            {/* Overlay de carregamento para importações */}
             {isProcessing && (
                 <div
                     className="overlay d-flex justify-content-center align-items-center"
@@ -256,8 +301,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             />
 
 
-            {/* Cards de sumário (Registros, Datas Faltantes e Malha de Voos) */}
-            {/* Exibir spinner apenas se cardsLoading for true */}
             {cardsLoading ? (
                 <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '150px' }}>
                     <div className="spinner-border text-secondary" role="status">
@@ -349,13 +392,37 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 Resultado dos Termos da SEFAZ Importados
             </h2>
 
-            {tableLoading ? ( // Novo bloco de carregamento para a tabela
+            {/* Nova seção para filtro genérico e exportar para Excel (Funcionalidade 7) */}
+            <div className="card mb-4">
+                <div className="card-header text-center">
+                    <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>
+                </div>
+                <div className="card-body">
+                    <div className="d-flex flex-wrap align-items-center justify-content-center gap-3">
+                        <label htmlFor="generalFilter" className="form-label mb-0 me-2">Filtrar Tabela:</label>
+                        <input
+                            type="text"
+                            className="form-control flex-grow-1"
+                            id="generalFilter"
+                            value={generalFilter}
+                            onChange={(e) => setGeneralFilter(e.target.value)}
+                            placeholder="Buscar em todas as colunas..."
+                            style={{ maxWidth: '300px' }}
+                        />
+                        <button type="button" className="btn btn-success" onClick={exportToExcel}>
+                            Exportar para Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {tableLoading ? (
                 <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '300px' }}>
                     <div className="spinner-border text-primary" role="status">
                         <span className="visually-hidden">Carregando dados da tabela...</span>
                     </div>
                 </div>
-            ) : data.length === 0 ? (
+            ) : filteredLocalData.length === 0 ? ( // Usar filteredLocalData
                 <div className="alert alert-info text-center" role="alert">
                     Nenhum dado encontrado para os critérios de filtro.
                 </div>

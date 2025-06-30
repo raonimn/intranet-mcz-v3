@@ -2,12 +2,10 @@
 import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import axios from 'axios';
 import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
-// Removido: import DatePicker from 'react-datepicker';
-// Removido: import 'react-datepicker/dist/react-datepicker.css';
 
-// Usar DatePicker do MUI (se a importação for via este modal)
+// Usar DatePicker do MUI e TextField com InputAdornment do MUI
 import { DatePicker as MuiDatePicker } from '@mui/x-date-pickers/DatePicker';
-import { TextField } from '@mui/material'; // Usar TextField do MUI para o input de texto do voo
+import { TextField, InputAdornment } from '@mui/material'; // <-- Adicionado InputAdornment
 
 // Funções auxiliares (manter ou mover para utils.js)
 const formatDateToDDMMYYYY = (date) => {
@@ -28,7 +26,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
 
     const [termosFile, setTermosFile] = useState(null);
     const termosFileInputRef = useRef(null);
-    const [numeroVoo, setNumeroVoo] = useState('');
+    const [numeroVooInput, setNumeroVooInput] = useState(''); // Estado para o input de 4 dígitos
     const [dataRegistro, setDataRegistro] = useState(new Date());
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
@@ -55,7 +53,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
             return;
         }
 
-        onProcessingChange(true, 'franchise'); // Indica que um processamento de franchise iniciou
+        onProcessingChange(true, 'franchise');
         handleCloseFranchiseModal();
 
         const formData = new FormData();
@@ -70,7 +68,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
             showToast('Erro', error.response?.data?.message || 'Erro ao processar o arquivo Franchise Report.', 'danger');
             console.error('Erro no upload Franchise:', error);
         } finally {
-            onProcessingChange(false, 'franchise'); // Indica que um processamento de franchise finalizou
+            onProcessingChange(false, 'franchise');
         }
     };
 
@@ -78,13 +76,19 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
     const handleCloseTermosModal = () => {
         setShowTermosModal(false);
         setTermosFile(null);
-        setNumeroVoo('');
+        setNumeroVooInput(''); // Limpa o input de 4 dígitos
         setDataRegistro(new Date());
         if (termosFileInputRef.current) termosFileInputRef.current.value = '';
     };
 
     const handleTermosFileChange = (e) => setTermosFile(e.target.files[0]);
-    const handleNumeroVooChange = (e) => setNumeroVoo(e.target.value);
+
+    // Lógica para o campo de Voo: limita a 4 dígitos e garante que seja numérico
+    const handleNumeroVooInputChange = (e) => {
+        const value = e.target.value.replace(/\D/g, ''); // Remove não-dígitos
+        setNumeroVooInput(value.slice(0, 4)); // Limita a 4 dígitos
+    };
+
     const handleDataRegistroChange = (date) => setDataRegistro(date);
 
     const handleTermosUpload = async (e) => {
@@ -93,8 +97,8 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
             showToast('Erro', 'Por favor, selecione um arquivo PDF.', 'danger');
             return;
         }
-        if (!numeroVoo.trim()) {
-            showToast('Erro', 'Por favor, informe o número do Voo.', 'danger');
+        if (!numeroVooInput.trim() || numeroVooInput.length !== 4) { // Valida que tem 4 dígitos
+            showToast('Erro', 'Por favor, informe os 4 dígitos do número do Voo.', 'danger');
             return;
         }
         if (!dataRegistro) {
@@ -102,12 +106,14 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
             return;
         }
 
-        onProcessingChange(true, 'termos'); // Indica que um processamento de termos iniciou
+        onProcessingChange(true, 'termos');
         handleCloseTermosModal();
 
+        const fullNumeroVoo = `AD${numeroVooInput.toUpperCase()}`; // Adiciona "AD" e garante maiúscula
+        
         const formData = new FormData();
         formData.append('pdf_file', termosFile);
-        formData.append('numeroVoo', numeroVoo);
+        formData.append('numeroVoo', fullNumeroVoo); // Envia o número completo
         formData.append('dataRegistro', formatDateToDDMMYYYY(dataRegistro));
 
         try {
@@ -115,28 +121,17 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
             showToast('Sucesso', `${response.data.message} ${response.data.additionalInfo}`, 'success');
-            // Passar os dados extraídos para o componente pai para exibir no modal (Funcionalidade 8)
-            onProcessingChange(false, 'termos', response.data.extractedData); // Passa os dados extraídos
+            onProcessingChange(false, 'termos', response.data.extractedData);
         } catch (error) {
             showToast('Erro', error.response?.data?.message || 'Erro ao processar o arquivo de Termos.', 'danger');
             console.error('Erro no upload Termos:', error);
-            onProcessingChange(false, 'termos'); // Indica que um processamento de termos finalizou (sem dados)
+            onProcessingChange(false, 'termos');
         }
     };
 
 
     return (
         <div className="d-flex justify-content-center mb-4">
-            {/* Estes botões serão removidos e suas ações acionadas pelo Sidebar */}
-            {/*
-            <Button variant="success" className="me-3" onClick={() => setShowFranchiseModal(true)}>
-                Importar Franchise Report (SK)
-            </Button>
-            <Button variant="success" onClick={() => setShowTermosModal(true)}>
-                Importar Termos (SEFAZ-AL)
-            </Button>
-            */}
-
             {/* Modal para Importar Franchise Report */}
             <Modal show={showFranchiseModal} onHide={handleCloseFranchiseModal} centered>
                 <Modal.Header className="px-4" closeButton>
@@ -166,14 +161,21 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
                             <Col md={6}>
                                 <Form.Group>
                                     <Form.Label>Número do Voo:</Form.Label>
-                                    {/* Usando TextField do MUI */}
+                                    {/* Campo de Voo com InputAdornment e limitação */}
                                     <TextField
                                         fullWidth
                                         size="small"
-                                        value={numeroVoo}
-                                        onChange={handleNumeroVooChange}
-                                        placeholder="Ex: AD1234"
+                                        value={numeroVooInput}
+                                        onChange={handleNumeroVooInputChange}
+                                        placeholder="Ex: 1234"
                                         required
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start">AD</InputAdornment>,
+                                            inputProps: {
+                                                maxLength: 4, // Limita o input a 4 caracteres
+                                                pattern: "[0-9]*" // Sugere teclado numérico em alguns navegadores
+                                            }
+                                        }}
                                     />
                                 </Form.Group>
                             </Col>

@@ -3,50 +3,40 @@ import React, { useState, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/NavBar';
 import CombinedData from './components/CombinedData';
-import ImportActions from './components/ImportActions'; // Manter aqui, mas será acionado pelo Sidebar
-import ExtractedTermDataModal from './components/ExtractedTermDataModal'; // NOVO: para exibir dados do termo importado
+// ImportActions NÃO é mais renderizado diretamente aqui
+// ExtractedTermDataModal (mantido)
+import ExtractedTermDataModal from './components/ExtractedTermDataModal';
 
-// MUI Imports
+// MUI Imports (mantidos)
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import IconButton from '@mui/material/IconButton';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
-import Fab from '@mui/material/Fab'; // Floating Action Button
+import Menu from '@mui/material/Menu'; // Pode ser removido se usarmos Dropdown do react-bootstrap
+import MenuItem from '@mui/material/MenuItem'; // Pode ser removido
+import Fab from '@mui/material/Fab';
 import Divider from '@mui/material/Divider';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
-import Button from '@mui/material/Button'; // Usar Button do MUI para filtros no sidebar
-import InputAdornment from '@mui/material/InputAdornment'; // Para ícones dentro do input
-import Tooltip from '@mui/material/Tooltip'; // MUI Tooltip
-import Dropdown from 'react-bootstrap/Dropdown'; // Manter Dropdown do Bootstrap para o menu Ferramentas se preferir
-import { DatePicker } from '@mui/x-date-pickers/DatePicker'; // <-- CORREÇÃO AQUI
+import Button from '@mui/material/Button';
+import InputAdornment from '@mui/material/InputAdornment';
+import Tooltip from '@mui/material/Tooltip';
+import Dropdown from 'react-bootstrap/Dropdown'; // Manter Dropdown do react-bootstrap para o menu Ferramentas
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 
-// Icons
+// Icons (mantidos)
 import MenuIcon from '@mui/icons-material/Menu';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
-import DescriptionIcon from '@mui/icons-material/Description'; // Ícone para "Termos SEFAZ"
-import FileUploadIcon from '@mui/icons-material/FileUpload'; // Ícone para "Dados SK"
-import FlightIcon from '@mui/icons-material/Flight'; // Ícone para "Malha de Voos"
+import DescriptionIcon from '@mui/icons-material/Description';
+import FileUploadIcon from '@mui/icons-material/FileUpload';
+import FlightIcon from '@mui/icons-material/Flight';
 
 
-import './App.css'; // Onde teremos os estilos gerais e o deslocamento do conteúdo
-
-// Funções auxiliares (pode mover para um arquivo utils.js se quiser)
-const applyDateMask = (value) => {
-    value = value.replace(/\D/g, "");
-    if (value.length > 4) {
-        value = value.replace(/^(\d{2})(\d{2})(\d{4}).*/, "$1/$2/$3");
-    } else if (value.length > 2) {
-        value = value.replace(/^(\d{2})(\d{2}).*/, "$1/$2");
-    }
-    return value;
-};
+import './App.css';
 
 const formatDateToDDMMYYYY = (date) => {
     if (!date) return '';
@@ -58,17 +48,17 @@ const formatDateToDDMMYYYY = (date) => {
 
 function App() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [activeFilters, setActiveFilters] = useState({}); // Filtros a serem passados para CombinedData
+    const [activeFilters, setActiveFilters] = useState({});
 
-    // Estados para os campos de filtro do sidebar
     const [filterAwb, setFilterAwb] = useState('');
     const [filterTermo, setFilterTermo] = useState('');
     const [filterDestino, setFilterDestino] = useState('');
     const [filterVoo, setFilterVoo] = useState('');
-    const [filterDataTermo, setFilterDataTermo] = useState(null); // Objeto Date para MUI DatePicker
+    const [filterDataTermo, setFilterDataTermo] = useState(null);
 
-    // Estado e ref para os modais de importação (Funcionalidade 4 - subitem)
-    const importActionsRef = useRef(null);
+    // Ref para o componente CombinedData para acessar seus métodos e os modais de ImportActions
+    const combinedDataRef = useRef(null);
+
     const [showExtractedDataModal, setShowExtractedDataModal] = useState(false);
     const [extractedTermData, setExtractedTermData] = useState([]);
 
@@ -77,7 +67,6 @@ function App() {
         setIsSidebarOpen(!isSidebarOpen);
     };
 
-    // Callback para quando os filtros são aplicados no sidebar
     const handleFilterSubmit = useCallback((e) => {
         e.preventDefault();
         const filters = {
@@ -88,16 +77,17 @@ function App() {
             dataTermo: filterDataTermo ? formatDateToDDMMYYYY(filterDataTermo) : '',
         };
         setActiveFilters(filters);
-        setIsSidebarOpen(false); // Fechar o sidebar após aplicar os filtros
+        setIsSidebarOpen(false);
     }, [filterAwb, filterTermo, filterDestino, filterVoo, filterDataTermo]);
 
-    // Handler para acionar os modais de importação do ImportActions
+
+    // Handler para acionar os modais de importação via ref do CombinedData
     const handleImportAction = useCallback((type, data) => {
-        if (importActionsRef.current) {
+        if (combinedDataRef.current) { // Verifica se a ref está disponível
             if (type === 'franchise') {
-                importActionsRef.current.showFranchiseModal();
+                combinedDataRef.current.showFranchiseModal();
             } else if (type === 'termos') {
-                importActionsRef.current.showTermosModal();
+                combinedDataRef.current.showTermosModal();
             } else if (type === 'extractedTerms' && data) { // Para exibir os dados extraídos do PDF
                 setExtractedTermData(data);
                 setShowExtractedDataModal(true);
@@ -106,29 +96,18 @@ function App() {
         setIsSidebarOpen(false); // Fechar o sidebar após acionar uma importação
     }, []);
 
-    // Callback para fechar o modal de dados extraídos
     const handleCloseExtractedDataModal = () => {
         setShowExtractedDataModal(false);
         setExtractedTermData([]);
     };
 
-    // Funções para gerenciar o dropdown "Ferramentas" (pode ser um menu MUI ou Dropdown do react-bootstrap)
-    const [anchorEl, setAnchorEl] = useState(null);
-    const openMenu = Boolean(anchorEl);
-    const handleMenuClick = (event) => {
-        setAnchorEl(event.currentTarget);
-    };
-    const handleMenuClose = () => {
-        setAnchorEl(null);
-    };
-
 
     return (
         <Router>
-            <Navbar /> {/* Navbar não precisa mais do toggleSidebar */}
+            <Navbar />
 
             {/* Floating Action Button para o Sidebar */}
-            <Tooltip title="Abrir Menu de Filtros" placement="right">
+            <Tooltip title={isSidebarOpen ? "Fechar Menu" : "Abrir Menu de Filtros"} placement="right">
                 <Fab
                     color="primary"
                     aria-label="open drawer"
@@ -136,11 +115,11 @@ function App() {
                     sx={{
                         position: 'fixed',
                         top: '50%',
-                        left: isSidebarOpen ? '260px' : '20px', // Move para a direita quando o sidebar está aberto
+                        left: isSidebarOpen ? '260px' : '20px',
                         transform: 'translateY(-50%)',
-                        zIndex: 1200, // Acima da maioria dos elementos, abaixo de modais de erro
+                        zIndex: 1200,
                         transition: 'left 0.3s ease-in-out',
-                        display: { xs: 'none', md: 'flex' } // Visível apenas em telas médias e maiores
+                        display: { xs: 'none', md: 'flex' }
                     }}
                 >
                     {isSidebarOpen ? <CloseIcon /> : <MenuIcon />}
@@ -152,14 +131,13 @@ function App() {
                 anchor="left"
                 open={isSidebarOpen}
                 onClose={toggleSidebar}
-                // PaperProps para ajustar a largura e estilos
                 PaperProps={{
                     sx: {
-                        width: 280, // Largura do sidebar
+                        width: 280,
                         boxSizing: 'border-box',
-                        backgroundColor: '#343a40', // Cor de fundo escura (MUI dark)
+                        backgroundColor: '#343a40',
                         color: '#fff',
-                        paddingTop: '64px', // Espaço para a AppBar fixa
+                        paddingTop: '64px',
                     },
                 }}
             >
@@ -179,7 +157,7 @@ function App() {
                                     <ListItemText primary="Ferramentas" />
                                 </Dropdown.Toggle>
 
-                                <Dropdown.Menu dark> {/* Use dark para tema escuro */}
+                                <Dropdown.Menu dark>
                                     <Dropdown.Item onClick={() => handleImportAction('franchise')}>
                                         <ListItemIcon sx={{ minWidth: 36 }}><FileUploadIcon sx={{ color: '#dee2e6' }} /></ListItemIcon>
                                         <ListItemText primary="Importar dados SK" />
@@ -253,7 +231,7 @@ function App() {
                                 sx={{
                                     '& .MuiInputBase-input': { color: '#fff' },
                                     '& .MuiInputLabel-root': { color: '#ccc' },
-                                    '& .MuiSvgIcon-root': { color: '#ccc' }, // Ícone do calendário
+                                    '& .MuiSvgIcon-root': { color: '#ccc' },
                                 }}
                             />
 
@@ -278,7 +256,8 @@ function App() {
                         element={<CombinedData
                                     filters={activeFilters}
                                     isSidebarOpen={isSidebarOpen}
-                                    onTermosImported={handleImportAction} // Passar a função para acionar o modal de termos
+                                    onTermosImported={handleImportAction}
+                                    ref={combinedDataRef} // Passar a ref para CombinedData
                                 />}
                     />
                     <Route
@@ -286,7 +265,8 @@ function App() {
                         element={<CombinedData
                                     filters={activeFilters}
                                     isSidebarOpen={isSidebarOpen}
-                                    onTermosImported={handleImportAction} // Passar a função para acionar o modal de termos
+                                    onTermosImported={handleImportAction}
+                                    ref={combinedDataRef} // Passar a ref para CombinedData
                                 />}
                     />
                 </Routes>
@@ -299,19 +279,11 @@ function App() {
                 data={extractedTermData}
             />
 
-            {/* ImportActions com a ref para poder ser acionado */}
-            <ImportActions onProcessingChange={(processing) => {
-                // Ao finalizar o processamento, se for importação de termos,
-                // CombineData vai chamar onTermosImported com os dados,
-                // então não precisamos duplicar a chamada aqui.
-                // Mas a lógica de toast e overlay continua aqui.
-                importActionsRef.current.showAppToast('Processamento', processing ? 'Iniciando importação...' : 'Importação finalizada.', 'info');
-            }} showToast={(title, message, type) => {
-                // Este showToast é para o ImportActions mostrar seus próprios toasts.
-                // Podemos centralizar isso no App.jsx para ter um único ToastContainer.
-                // Por agora, vamos manter o ImportActions cuidando de seus próprios toasts,
-                // mas essa é uma área para otimização futura.
-            }} ref={importActionsRef} />
+            {/* ImportActions NÃO é mais renderizado diretamente aqui.
+                Ele agora é gerenciado e acionado via ref dentro de CombinedData,
+                que por sua vez é acionado via ref por App.jsx
+            */}
+            {/* <ImportActions onProcessingChange={handleProcessingChange} showToast={showAppToast} ref={importActionsRef} /> */}
 
         </Router>
     );

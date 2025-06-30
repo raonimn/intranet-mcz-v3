@@ -1,5 +1,6 @@
 // frontend/src/components/CombinedData.jsx
 
+
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -7,17 +8,6 @@ import { faCopy } from '@fortawesome/free-solid-svg-icons';
 import Toast from 'react-bootstrap/Toast';
 import ToastContainer from 'react-bootstrap/ToastContainer';
 import ImportActions from './ImportActions';
-import DatePicker from 'react-datepicker'; // Certifique-se de que este import está aqui se você o moveu para ImportActions
-
-
-// ... (Funções auxiliares formatDateToDDMMYYYY, applyDateMask, TooltipWrapper - sem alterações) ...
-const formatDateToDDMMYYYY = (date) => {
-    if (!date) return '';
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${y}`;
-};
 
 const applyDateMask = (value) => {
     value = value.replace(/\D/g, "");

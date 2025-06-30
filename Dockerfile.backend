@@ -1,0 +1,20 @@
+# Dockerfile.backend
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json first
+COPY backend/package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application code
+COPY backend/ .
+
+# Expose port 8080 (or whatever your backend listens on)
+EXPOSE 8080
+
+# Command to run the backend application
+CMD ["npm", "start"]    

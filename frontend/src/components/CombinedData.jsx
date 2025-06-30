@@ -6,7 +6,7 @@ import { faCopy } from '@fortawesome/free-solid-svg-icons';
 import Toast from 'react-bootstrap/Toast';
 import ToastContainer from 'react-bootstrap/ToastContainer';
 import ImportActions from './ImportActions';
-import * as XLSX from 'xlsx'; // Importar xlsx para exportar para Excel
+import * as XLSX from 'xlsx';
 
 // Função auxiliar para máscara de data (mantida)
 const applyDateMask = (value) => {
@@ -28,9 +28,10 @@ const TooltipWrapper = ({ children, title }) => {
     );
 };
 
-function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
-    const [fullData, setFullData] = useState([]); // Dados brutos carregados do backend
-    const [filteredLocalData, setFilteredLocalData] = useState([]); // Dados filtrados localmente
+// REMOVIDO: onTermosImported da prop
+function CombinedData({ filters, isSidebarOpen }, ref) {
+    const [fullData, setFullData] = useState([]);
+    const [filteredLocalData, setFilteredLocalData] = useState([]);
     const [cardsLoading, setCardsLoading] = useState(true);
     const [tableLoading, setTableLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -41,7 +42,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     const [isProcessing, setIsProcessing] = useState(false);
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
-    // Novo estado para o filtro genérico (Funcionalidade 7)
     const [generalFilter, setGeneralFilter] = useState('');
 
     const [currentPage, setCurrentPage] = useState(1);
@@ -97,7 +97,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             const response = await axios.get(
                 `${BACKEND_URL}/api/combined-data-specific?${queryParams.toString()}`
             );
-            setFullData(response.data); // Salvar os dados brutos
+            setFullData(response.data);
             setCurrentPage(1);
         } catch (err) {
             setError(
@@ -111,6 +111,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         }
     }, [filters, BACKEND_URL, showAppToast]);
 
+    // Lógica para lidar com o processamento de importação
     const handleProcessingChange = useCallback((processing, type, extractedData) => {
         setIsProcessing(processing);
         if (!processing) {
@@ -118,11 +119,12 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             fetchAwbsByDestination(); // Recarrega dados dos cards
             fetchMissingDates(); // Recarrega dados dos cards
 
-            if (type === 'termos' && extractedData) {
-                onTermosImported('extractedTerms', extractedData);
-            }
+            // REMOVIDO: Lógica para acionar o modal de termos extraídos
+            // if (type === 'termos' && extractedData) {
+            //     onTermosImported('extractedTerms', extractedData);
+            // }
         }
-    }, [fetchData, fetchAwbsByDestination, fetchMissingDates, onTermosImported]);
+    }, [fetchData, fetchAwbsByDestination, fetchMissingDates]); // REMOVIDO: onTermosImported das dependências
 
 
     useEffect(() => {
@@ -139,7 +141,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         });
     }, [fetchAwbsByDestination, fetchMissingDates]);
 
-    // Efeito para aplicar o filtro genérico localmente (Funcionalidade 7)
     useEffect(() => {
         if (!generalFilter.trim()) {
             setFilteredLocalData(fullData);
@@ -151,7 +152,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 )
             );
             setFilteredLocalData(filtered);
-            setCurrentPage(1); // Resetar paginação ao filtrar localmente
+            setCurrentPage(1);
         }
     }, [generalFilter, fullData]);
 
@@ -179,7 +180,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
 
     const totalAwbsCalculated = awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0);
 
-    // Paginação agora baseada em filteredLocalData
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
     const currentItems = filteredLocalData.slice(indexOfFirstItem, indexOfLastItem);
@@ -221,14 +221,12 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         showTermosModal: () => importActionsInternalRef.current.showTermosModal(),
     }));
 
-    // Função para exportar os dados filtrados para Excel (Funcionalidade 7)
     const exportToExcel = () => {
         if (!filteredLocalData || filteredLocalData.length === 0) {
             showAppToast('Aviso', 'Não há dados para exportar.', 'warning');
             return;
         }
 
-        // Mapear os dados para um formato legível para o Excel, mantendo a ordem das colunas
         const dataForExport = filteredLocalData.map(row => ({
             "Termo": row.numero_termo || "N/A",
             "Dt Termo": row.data_registro || "N/A",
@@ -241,11 +239,11 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             "Voo": row.numero_voo || "N/A",
             "Chave NFe": row.chave_nfe || "N/A",
             "Chave MDFe": row.chave_mdfe || "N/A",
-            "Nº CT-e": row.numero_cte || "N/A", // Adicionado, embora não visível na tabela padrão
-            "Nº NFe": row.numero_nfe || "N/A", // Adicionado
-            "Dt Emissão SEFAZ": row.sefaz_data_emissao || "N/A", // Adicionado
-            "Chave CT-e FR": row.fr_chave_cte || "N/A", // Adicionado
-            "Notas FR": row.notas || "N/A" // Adicionado
+            "Nº CT-e": row.numero_cte || "N/A",
+            "Nº NFe": row.numero_nfe || "N/A",
+            "Dt Emissão SEFAZ": row.sefaz_data_emissao || "N/A",
+            "Chave CT-e FR": row.fr_chave_cte || "N/A",
+            "Notas FR": row.notas || "N/A"
         }));
 
 
@@ -392,7 +390,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 Resultado dos Termos da SEFAZ Importados
             </h2>
 
-            {/* Nova seção para filtro genérico e exportar para Excel (Funcionalidade 7) */}
             <div className="card mb-4">
                 <div className="card-header text-center">
                     <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>
@@ -422,7 +419,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                         <span className="visually-hidden">Carregando dados da tabela...</span>
                     </div>
                 </div>
-            ) : filteredLocalData.length === 0 ? ( // Usar filteredLocalData
+            ) : filteredLocalData.length === 0 ? (
                 <div className="alert alert-info text-center" role="alert">
                     Nenhum dado encontrado para os critérios de filtro.
                 </div>

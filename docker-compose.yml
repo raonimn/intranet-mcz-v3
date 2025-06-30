@@ -43,7 +43,6 @@ services:
       - ./backend:/app/backend
     networks:
       - app-network
-
   frontend:
     build:
       context: .
@@ -52,11 +51,8 @@ services:
       - "80:80"
       - "5173:5173" # Opcional, para desenvolvimento local se precisar
     environment:
-      # ALTERAÇÃO CRUCIAL AQUI: Usar o IP público do seu servidor
-      # Este IP será o hostname que o navegador do cliente usará para se conectar ao backend.
-      # Se o backend também precisa fazer requisições para si mesmo (raro para seu caso),
-      # ou para outros serviços do compose, isso não afetaria.
-      VITE_BACKEND_URL: http://192.168.0.217:8080 # <-- USE O IP REAL DO SEU SERVIDOR AQUI
+      # ALTERAÇÃO CRUCIAL AQUI: VITE_BACKEND_URL agora aponta para o caminho do proxy Nginx
+      VITE_BACKEND_URL: /api # <-- Mude para /api
     depends_on:
       - backend
     volumes:

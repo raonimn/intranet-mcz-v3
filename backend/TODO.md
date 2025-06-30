@@ -1,11 +1,10 @@
-Gemini, sobre o que atualizamos até então, vou fazer algumas considerações:
+Meu nome é Raoni, não Gemini.
+Sobre essa etapa, considere:
 
-1. Sobre o menu lateral
-* Não ficou do meu agrado. A abertura com o botão no navbar não me agradou. Esse botão deveria ficar "flutuante" no meio da tela do lado esquerdo e, caso o usuário clique, abra. O scrollbar também não ficou interessante com ele aparente. Se pertinente, podemos julgar alterar a para o MUI.
-* Os itens do menu "Ferramentas" não estão funcionais. Ao clicar, nada acontece. Assim que ficarem operacionais, podemos remover os botões que estão na tela atualmente.
-2. Sobre a página, os cards e o restante da tela não precisam sofrer refresh sempre que fizermos buscas ou filtros, já que não vão sofrer alterações, apenas quando formos importar algum dado, já que teremos alteração nos valores.
-3. A pesquisa "local", dos dados já carregados do banco não identifiquei na tela, bem como o botão de exportar para Excel.
-4. O modal ao importar o PDF dos termos também não foi observado
+1. Ao pesquisarmos pelo menu lateral, os cards ainda continuam sendo atualiados e o circulo para demonstrar que está carregando substitui eles.
+O ideal é que a tabela abaixo suma, fique com esse simbolo de carregamento, até que os dados estejam disponíveis e a tabela seja exibida, mas os cards devem permanecer na tela.
+2. Para a pesquisa, a pesquisa "destino" deve considerar o texto exato do campo. Por exemplo, se eu digitar MCZ, os resultados com MCZH1 não devem aparecer.
+
 
 
 

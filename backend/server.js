@@ -8,16 +8,14 @@ const fs = require('fs');
 const xlsx = require('xlsx');
 const cors = require('cors');
 
-// Importa o pool de conexões e as funções de criação/inserção
 const {
-    pool, // <-- AGORA IMPORTAMOS O POOL
+    pool,
     createFranchiseReportTable,
     createSefazReportTable,
     insertOrUpdateFranchiseReport,
     insertSefazReportData,
 } = require('./database');
 
-// Importa o processador de PDF
 const { processPdfAndSaveData } = require('./services/pdfProcessor');
 
 
@@ -26,7 +24,6 @@ const port = process.env.PORT || 8080;
 const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
 
 
-// Middleware
 app.use(cors({
     origin: function (origin, callback) {
         if (!origin) return callback(null, true);
@@ -63,9 +60,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Remover: const dbPath = path.resolve(__dirname, process.env.DATABASE_PATH || './dados.db'); // Não mais usado para MySQL
-
-// Função auxiliar para formatar a data como DD/MM/YYYY
 const formatDateToDDMMYYYY = (date) => {
     if (!date) return '';
     const d = String(date.getDate()).padStart(2, '0');
@@ -74,7 +68,6 @@ const formatDateToDDMMYYYY = (date) => {
     return `${d}/${m}/${y}`;
 };
 
-// --- CRIAÇÃO DE TABELAS NA INICIALIZAÇÃO DO SERVIDOR ---
 const initializeDatabase = async () => {
     try {
         if (LOG_DEBUG) console.log('[SERVER-INIT] Inicializando banco de dados MySQL...');
@@ -88,34 +81,29 @@ const initializeDatabase = async () => {
 };
 
 initializeDatabase().then(() => {
-    // Remover rotas HTML antigas (se ainda existirem)
     app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
 
-    // --- Rotas de API ---
-
-    // API para upload de arquivos PDF e processamento
     app.post('/api/upload-pdf', upload.single('pdf_file'), async (req, res) => {
         const file = req.file;
         const numeroVoo = req.body.numeroVoo;
-        const dataRegistro = req.body.dataRegistro;
 
         if (!file) return res.status(400).json({ success: false, message: 'Nenhum arquivo PDF enviado.' });
         if (!numeroVoo || !numeroVoo.trim()) return res.status(400).json({ success: false, message: 'Por favor, insira o número do voo.' });
-        if (!dataRegistro || !dataRegistro.trim()) return res.status(400).json({ success: false, message: 'Por favor, insira a data de registro.' });
 
         if (LOG_DEBUG) {
-            console.log(`[DEBUG-SERVER] PDF recebido: ${file.originalname}, Número do Voo: ${numeroVoo}, Data de Registro: ${dataRegistro}`);
+            console.log(`[DEBUG-SERVER] PDF recebido: ${file.originalname}, Número do Voo: ${numeroVoo}`);
         }
 
         try {
-            const result = await processPdfAndSaveData(file.buffer, numeroVoo, dataRegistro);
+            // Chamada para processPdfAndSaveData sem dataRegistro
+            const result = await processPdfAndSaveData(file.buffer, numeroVoo);
 
             const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
 
             if (result.success) {
                 res.status(200).json({
                     success: true,
-                    message: `Voo ${numeroVoo} do dia ${dataRegistro} processado com sucesso.`,
+                    message: `Voo ${numeroVoo} processado com sucesso.`,
                     recordsProcessed: result.insertedCount,
                     additionalInfo: `Inseridos ${formatNumber(result.insertedCount)} notas. (${formatNumber(result.duplicateCount)} duplicidades ignoradas).`,
                     extractedData: result.extractedData
@@ -129,7 +117,6 @@ initializeDatabase().then(() => {
         }
     });
 
-    // API para upload de arquivos XLSX
     app.post('/api/upload-report', upload.single('xlsx_file'), validateXlsx, async (req, res) => {
         const file = req.file;
 
@@ -168,7 +155,6 @@ initializeDatabase().then(() => {
 
             await insertOrUpdateFranchiseReport(processedData);
 
-            // Consulta o total de AWBs agora usando o pool MySQL
             const [rows] = await pool.execute('SELECT COUNT(*) AS total FROM franchise_report');
             const count = rows[0].total;
 
@@ -193,17 +179,15 @@ initializeDatabase().then(() => {
         }
     });
 
-    // API para consultar os dados combinados (tabela principal)
     app.get('/api/combined-data-specific', async (req, res) => {
-        const { numeroVoo, dataRegistro, awb, numeroTermo, destino } = req.query;
-        let connection; // Usar 'connection' em vez de 'conn' para clareza com pool
+        const { numeroVoo, dataTermo, awb, numeroTermo, destino } = req.query; // Ajustado para dataTermo
+        let connection;
         try {
-            connection = await pool.getConnection(); // Obtém uma conexão do pool
+            connection = await pool.getConnection();
 
             let whereClauses = [];
             let params = [];
 
-            // Filtro para Voo
             if (numeroVoo && numeroVoo.trim() !== '') {
                 let formattedVoo = numeroVoo.trim();
                 if (formattedVoo.length === 4) {
@@ -213,39 +197,24 @@ initializeDatabase().then(() => {
                 params.push(`%${formattedVoo}%`);
             }
 
-            // Filtro para Data do Registro (Termo)
-            if (dataRegistro && dataRegistro.trim() !== '') {
-                // No MySQL, você pode comparar strings de data diretamente se o formato for YYYY-MM-DD
-                // Se for DD/MM/YYYY, precisa de STR_TO_DATE
-                // Assumindo que `data_registro` no DB será DD/MM/YYYY, faremos a comparação de string
-                whereClauses.push('sr.data_registro = ?');
-                params.push(dataRegistro.trim());
+            // Filtrar por data_emissao (que vem do rodapé)
+            if (dataTermo && dataTermo.trim() !== '') {
+                whereClauses.push("STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') = STR_TO_DATE(?, '%d/%m/%Y')");
+                params.push(dataTermo.trim());
             } else {
+                // Filtro padrão para os últimos 3 dias usando data_emissao
                 const today = new Date();
                 const twoDaysAgo = new Date();
                 twoDaysAgo.setDate(today.getDate() - 2);
 
-                const formatDateForQuery = (date) => {
-                    const d = String(date.getDate()).padStart(2, '0');
-                    const m = String(date.getMonth() + 1).padStart(2, '0');
-                    const y = date.getFullYear();
-                    // Para MySQL, é ideal que as datas no DB sejam YYYY-MM-DD para BETWEEN funcionar bem.
-                    // Se estiver DD/MM/YYYY, comparar como string pode funcionar, mas não é ideal para ranges.
-                    // Para consistência, manteremos o formato DD/MM/YYYY na query.
-                    return `${d}/${m}/${y}`;
-                };
+                const todayFormattedForQuery = formatDateToDDMMYYYY(today);
+                const twoDaysAgoFormattedForQuery = formatDateToDDMMYYYY(twoDaysAgo);
 
-                const todayFormattedForQuery = formatDateForQuery(today);
-                const twoDaysAgoFormattedForQuery = formatDateForQuery(twoDaysAgo);
-
-                // Para comparar datas em formato DD/MM/YYYY no MySQL como um range:
-                // Converte para um formato comparável (YYYYMMDD) usando STR_TO_DATE
-                whereClauses.push("STR_TO_DATE(sr.data_registro, '%d/%m/%Y') BETWEEN STR_TO_DATE(?, '%d/%m/%Y') AND STR_TO_DATE(?, '%d/%m/%Y')");
+                whereClauses.push("STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') BETWEEN STR_TO_DATE(?, '%d/%m/%Y') AND STR_TO_DATE(?, '%d/%m/%Y')");
                 params.push(twoDaysAgoFormattedForQuery);
                 params.push(todayFormattedForQuery);
             }
 
-            // NOVO FILTRO: AWB
             if (awb && awb.trim() !== '') {
                 let formattedAwb = awb.trim();
                 if (!formattedAwb.startsWith('577')) {
@@ -255,16 +224,14 @@ initializeDatabase().then(() => {
                 params.push(`%${formattedAwb}%`);
             }
 
-            // NOVO FILTRO: Número do Termo
             if (numeroTermo && numeroTermo.trim() !== '') {
                 whereClauses.push('sr.numero_termo = ?');
                 params.push(numeroTermo.trim());
             }
 
-            // NOVO FILTRO: Destino (exato, transformado para maiúsculas no frontend)
             if (destino && destino.trim() !== '') {
                 whereClauses.push('fr.destino = ?');
-                params.push(destino.toUpperCase().trim()); // <-- Já é UPPER no frontend antes de enviar
+                params.push(destino.toUpperCase().trim());
             }
 
             const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -289,9 +256,9 @@ initializeDatabase().then(() => {
                     fr.data_emissao AS franchise_data_emissao
                 FROM sefaz_report AS sr
                 LEFT JOIN franchise_report AS fr
-                ON SUBSTR(fr.chave_cte, 26, 9) = LPAD(sr.numero_cte, 9, '0') -- LPAD para zero-padding
+                ON SUBSTR(fr.chave_cte, 26, 9) = LPAD(sr.numero_cte, 9, '0')
                 ${whereString}
-                ORDER BY sr.data_registro DESC, sr.numero_termo ASC;
+                ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
             `;
 
             if (LOG_DEBUG) {
@@ -299,19 +266,18 @@ initializeDatabase().then(() => {
                 console.log('[DEBUG-SERVER] Query Params Combined Data:', params);
             }
 
-            const [rows] = await connection.execute(query, params); // Usa connection.execute() para queries com placeholders
+            const [rows] = await connection.execute(query, params);
             res.status(200).json(rows);
         } catch (error) {
             console.error(`[ERROR-SERVER] Erro durante a consulta de dados combinados: ${error.message}`);
             res.status(500).json({ success: false, message: 'Erro durante a consulta.' });
         } finally {
             if (connection) {
-                connection.release(); // Libera a conexão
+                connection.release();
             }
         }
     });
 
-    // --- Rota: Contagem de AWBs por Destino ---
     app.get('/api/awbs-by-destination', async (req, res) => {
         let connection;
         try {
@@ -333,7 +299,6 @@ initializeDatabase().then(() => {
         }
     });
 
-    // --- Rota: Datas Faltantes por Destino ---
     app.get('/api/missing-dates', async (req, res) => {
         let connection;
         try {
@@ -341,7 +306,7 @@ initializeDatabase().then(() => {
             const missingDatesByDestination = {};
             const today = new Date();
             const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(today.getDate() - 29); // 30 dias incluindo hoje
+            thirtyDaysAgo.setDate(today.getDate() - 29);
 
             const [allDestinationsRows] = await connection.execute('SELECT DISTINCT destino FROM franchise_report WHERE destino IS NOT NULL AND destino != "" ORDER BY destino ASC;');
             const allDestinations = allDestinationsRows.map(row => row.destino);
@@ -354,11 +319,11 @@ initializeDatabase().then(() => {
                 const presentDatesFormatted = new Set(
                     presentDatesRaw.map(dateStr => {
                         if (!dateStr || dateStr.length !== 10 || dateStr.indexOf('/') === -1) {
-                            return null; // Ignora datas inválidas
+                            return null;
                         }
                         const [d, m, y] = dateStr.split('/');
                         return `${y}${m}${d}`;
-                    }).filter(Boolean) // Remove nulos
+                    }).filter(Boolean)
                 );
 
                 for (let d = new Date(thirtyDaysAgo); d <= today; d.setDate(d.getDate() + 1)) {

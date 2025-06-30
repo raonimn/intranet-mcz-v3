@@ -410,14 +410,12 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 style={{ maxHeight: "300px", overflowY: "auto" }}
               >
                 <ul className="list-group list-group-flush">
-                  {/* Adicionar verificação Array.isArray() aqui */}
                   {Array.isArray(awbsByDestination) &&
                   awbsByDestination.length === 0 ? (
                     <li className="list-group-item">
                       Nenhum dado de destino encontrado.
                     </li>
                   ) : (
-                    // Garantir que é um array antes de chamar map
                     Array.isArray(awbsByDestination) &&
                     awbsByDestination.map((item, idx) => (
                       <li
@@ -451,7 +449,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 style={{ maxHeight: "300px", overflowY: "auto" }}
               >
                 <ul className="list-group list-group-flush">
-                  {/* Adicionar verificação Array.isArray() aqui também para safety */}
                   {typeof missingDates === "object" &&
                   missingDates !== null &&
                   Object.keys(missingDates).length === 0 ? (
@@ -459,15 +456,10 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                       Verificando datas faltantes...
                     </li>
                   ) : (
-                    // Object.entries já retorna um array, mas a verificação no missingDates garante que ele seja um objeto
                     Object.entries(missingDates || {}).map(
-                      (
-                        [destino, dates],
-                        idx // Adicionado || {} para segurança
-                      ) => (
+                      ([destino, dates], idx) => (
                         <li key={idx} className="list-group-item">
                           <strong>{destino || "N/A"}:</strong>{" "}
-                          {/* Garantir que 'dates' é um array antes de join */}
                           {Array.isArray(dates) && dates.length > 0
                             ? dates.join(", ")
                             : "Todas as datas presentes."}
@@ -549,7 +541,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             </span>
           </div>
         </div>
-      ) : Array.isArray(filteredLocalData) && filteredLocalData.length === 0 ? ( // Usar filteredLocalData
+      ) : Array.isArray(filteredLocalData) && filteredLocalData.length === 0 ? (
         <div className="alert alert-info text-center" role="alert">
           Nenhum dado encontrado para os critérios de filtro.
         </div>
@@ -560,7 +552,8 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               <thead className="table-dark">
                 <tr>
                   <th>Termo</th>
-                  <th>Dt Termo</th>
+                  {/* Remova espaços ou quebras de linha extras entre as tags <th> */}
+                  <th>Dt Emissão</th>
                   <th>AWB</th>
                   <th>Emissão</th>
                   <th>Origem</th>
@@ -573,12 +566,12 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 </tr>
               </thead>
               <tbody>
-                {/* Garantir que currentItems é um array antes de mapear */}
                 {Array.isArray(currentItems) &&
                   currentItems.map((row, index) => (
                     <tr key={index}>
                       <td>{row.numero_termo || "N/A"}</td>
-                      <td>{row.data_registro || "N/A"}</td>
+                      {/* Remova espaços ou quebras de linha extras entre as tags <td> */}
+                      <td>{row.sefaz_data_emissao || "N/A"}</td>
                       <td
                         onClick={() => copyAwbLast8Digits(row.awb)}
                         style={{ cursor: "pointer" }}

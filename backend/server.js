@@ -1,5 +1,4 @@
 // backend/server.js
-
 require('dotenv').config();
 
 const express = require('express');
@@ -14,7 +13,6 @@ const cors = require('cors');
 const {
     createFranchiseReportTable,
     createSefazReportTable,
-    // createTermosInseridosTable,
     insertOrUpdateFranchiseReport,
     insertSefazReportData,
     createConnection
@@ -32,23 +30,17 @@ const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
 // Middleware
 app.use(cors({
     origin: function (origin, callback) {
-        // Permite requisições sem origem (ex: Postman, curl, arquivos locais)
         if (!origin) return callback(null, true);
 
-        // Defina aqui o(s) padrão(ões) do(s) IP(s) da sua rede local.
-        // Substitua '192.168.1.' pelo seu padrão de IP real.
-        // O (:\d+)? permite que a URL inclua uma porta (ex: :5173)
         const allowedIpPatterns = [
-            /^http:\/\/192\.168\.0\.\d{1,3}(:\d+)?$/, // Exemplo: http://192.168.1.X:5173
-            /^http:\/\/10\.0\.0\.\d{1,3}(:\d+)?$/,   // Exemplo: http://10.0.0.X:5173
-            /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/, // Exemplo: 172.16.0.0 a 172.31.255.255
-            // Inclua o localhost e 127.0.0.1 para testes locais na máquina do backend
-            /^http:\/\/localhost(:\d+)?$/,
-            /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+            /^https?:\/\/192\.168\.0\.\d{1,3}(:\d+)?$/, // Exemplo: http://192.168.1.X:5173
+            /^https?:\/\/10\.0\.0\.\d{1,3}(:\d+)?$/,    // Exemplo: http://10.0.0.X:5173
+            /^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/, // Exemplo: 172.16.0.0 a 172.31.255.255
+            /^https?:\/\/localhost(:\d+)?$/,
+            /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
         ];
 
         const isAllowed = allowedIpPatterns.some(pattern => {
-            // Adiciona um log para depuração do CORS
             if (LOG_DEBUG) {
                 console.log(`[CORS-DEBUG] Checking origin: ${origin} against pattern: ${pattern}`);
             }
@@ -62,9 +54,9 @@ app.use(cors({
             callback(new Error('Not allowed by CORS'));
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Métodos HTTP permitidos
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Adicionado X-Requested-With
-    credentials: true // Importante se você planeja usar cookies ou cabeçalhos de autorização
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -90,7 +82,6 @@ const initializeDatabase = async () => {
         if (LOG_DEBUG) console.log('[SERVER-INIT] Inicializando banco de dados...');
         await createFranchiseReportTable();
         await createSefazReportTable();
-        //       await createTermosInseridosTable();
         if (LOG_DEBUG) console.log('[SERVER-INIT] Banco de dados inicializado com sucesso.');
     } catch (error) {
         console.error('[SERVER-INIT] Falha crítica ao inicializar o banco de dados:', error.message);
@@ -99,13 +90,15 @@ const initializeDatabase = async () => {
 };
 
 initializeDatabase().then(() => {
-    app.use(express.static('public'));
-    app.use('/files', express.static(path.join(__dirname, 'public', 'files')));
+    // Remover o middleware de servir arquivos estáticos se o frontend for React
+    // app.use(express.static('public'));
+    // app.use('/files', express.static(path.join(__dirname, 'public', 'files')));
 
-    app.get('/', (req, res) => res.send('Frontend React será servido aqui!'));
-    app.get('/impreport', (req, res) => res.sendFile(path.join(__dirname, 'public', 'importarreport.html')));
-    app.get('/imptermo', (req, res) => res.sendFile(path.join(__dirname, 'public', 'importatermo.html')));
-    app.get('/natura', (req, res) => res.sendFile(path.join(__dirname, 'public', 'natura.html')));
+    // Remover rotas HTML antigas
+    app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
+    // app.get('/impreport', (req, res) => res.sendFile(path.join(__dirname, 'public', 'importarreport.html')));
+    // app.get('/imptermo', (req, res) => res.sendFile(path.join(__dirname, 'public', 'importatermo.html')));
+    // app.get('/natura', (req, res) => res.sendFile(path.join(__dirname, 'public', 'natura.html')));
 
     // --- Rotas de API ---
 
@@ -124,22 +117,18 @@ initializeDatabase().then(() => {
         }
 
         try {
-            // A função processPdfAndSaveData agora retorna um objeto com insertedCount, duplicateCount, etc.
             const result = await processPdfAndSaveData(file.buffer, numeroVoo, dataRegistro);
 
             const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
 
-            if (result.success) { // Verifica se processPdfAndSaveData indica sucesso
+            if (result.success) {
                 res.status(200).json({
                     success: true,
                     message: `Voo ${numeroVoo} do dia ${dataRegistro} processado com sucesso.`,
-                    recordsProcessed: result.insertedCount, // Quantidade de termos NOVOS inseridos
+                    recordsProcessed: result.insertedCount,
                     additionalInfo: `Inseridos ${formatNumber(result.insertedCount)} notas. (${formatNumber(result.duplicateCount)} duplicidades ignoradas).`
-                    // A contagem de "termos" únicos pode ser mais complexa se não usarmos termos_inseridos.
-                    // Por enquanto, focaremos nas "notas" (linhas) que foram inseridas ou ignoradas.
                 });
             } else {
-                // Se processPdfAndSaveData retornar { success: false, message: '...' }
                 res.status(500).json({ success: false, message: result.message || 'Erro ao processar o PDF.' });
             }
         } catch (error) {
@@ -187,7 +176,7 @@ initializeDatabase().then(() => {
                     if (colIndex === 5 && typeof row[colIndex] === 'number') { // Coluna F para data_emissao
                         const excelSerialDate = row[colIndex];
                         const date = new Date((excelSerialDate - 25569) * 24 * 60 * 60 * 1000);
-                        return formatDateToDDMMYYYY(date); // Use a função auxiliar já definida
+                        return formatDateToDDMMYYYY(date);
                     }
                     return row[colIndex] || '';
                 });
@@ -198,11 +187,9 @@ initializeDatabase().then(() => {
                 console.log('[DEBUG-SERVER] Selected data for DB insertion (first 5 processed rows):', processedData.slice(0, 5));
             }
 
-            // Vamos adicionar um log para o total de linhas a serem inseridas/atualizadas
             if (LOG_DEBUG) {
                 console.log(`[DEBUG-SERVER] Total de linhas processadas do XLSX para inserção: ${processedData.length}`);
             }
-
 
             await insertOrUpdateFranchiseReport(processedData);
 
@@ -224,7 +211,6 @@ initializeDatabase().then(() => {
             });
 
         } catch (error) {
-            // Log detalhado do erro, incluindo o stack trace
             console.error(`[ERROR-SERVER] Erro fatal ao processar arquivo XLSX: ${error.message}`);
             if (error.stack) {
                 console.error('[ERROR-SERVER] Stack trace:', error.stack);
@@ -236,12 +222,9 @@ initializeDatabase().then(() => {
         }
     });
 
-    // API para consultar os dados combinados
     // API para consultar os dados combinados (tabela principal)
     app.get('/api/combined-data-specific', async (req, res) => {
         const { numeroVoo, dataRegistro } = req.query;
-        const { createConnection } = require('./database');
-
         let conn;
         try {
             conn = createConnection();
@@ -255,12 +238,16 @@ initializeDatabase().then(() => {
             }
 
             if (dataRegistro && dataRegistro.trim() !== '') {
-                whereClauses.push('sr.data_registro = ?');
-                params.push(dataRegistro.trim());
+                // Converte a data de DD/MM/YYYY para YYYYMMDD para comparação numérica
+                const [d, m, y] = dataRegistro.trim().split('/');
+                const formattedDate = `${y}${m}${d}`;
+                whereClauses.push('CAST(SUBSTR(sr.data_registro, 7, 4) || SUBSTR(sr.data_registro, 4, 2) || SUBSTR(sr.data_registro, 1, 2) AS INTEGER) = ?');
+                params.push(parseInt(formattedDate, 10));
             } else {
+                // Filtro padrão para os últimos 3 dias se nenhum filtro de data for fornecido
                 const today = new Date();
                 const twoDaysAgo = new Date();
-                twoDaysAgo.setDate(today.getDate() - 2);
+                twoDaysAgo.setDate(today.getDate() - 2); // Últimos 3 dias (hoje, ontem, antes de ontem)
 
                 const formatDateForQuery = (date) => {
                     const d = String(date.getDate()).padStart(2, '0');
@@ -329,13 +316,14 @@ initializeDatabase().then(() => {
         }
     });
 
-    // --- NOVA ROTA: Contagem de AWBs por Destino ---
+    // --- Rota: Contagem de AWBs por Destino ---
     app.get('/api/awbs-by-destination', async (req, res) => {
         const conn = createConnection();
         try {
             const query = `
                 SELECT destino, COUNT(awb) AS total_awbs
                 FROM franchise_report
+                WHERE destino IS NOT NULL AND destino != ''
                 GROUP BY destino
                 ORDER BY destino ASC;
             `;
@@ -353,8 +341,8 @@ initializeDatabase().then(() => {
             if (conn) conn.close();
         }
     });
-
-    // --- NOVA ROTA: Datas Faltantes por Destino ---
+    
+    // --- Rota: Datas Faltantes por Destino ---
     app.get('/api/missing-dates', async (req, res) => {
         const conn = createConnection();
         try {
@@ -364,7 +352,7 @@ initializeDatabase().then(() => {
             thirtyDaysAgo.setDate(today.getDate() - 29); // 30 dias incluindo hoje
 
             const allDestinations = await new Promise((resolve, reject) => {
-                conn.all('SELECT DISTINCT destino FROM franchise_report ORDER BY destino ASC;', (err, rows) => {
+                conn.all('SELECT DISTINCT destino FROM franchise_report WHERE destino IS NOT NULL AND destino != "" ORDER BY destino ASC;', (err, rows) => {
                     if (err) reject(err);
                     else resolve(rows.map(row => row.destino));
                 });
@@ -373,21 +361,20 @@ initializeDatabase().then(() => {
             for (const destino of allDestinations) {
                 missingDatesByDestination[destino] = [];
                 const presentDatesRaw = await new Promise((resolve, reject) => {
-                    conn.all('SELECT DISTINCT data_emissao FROM franchise_report WHERE destino = ?;', [destino], (err, rows) => {
+                    conn.all('SELECT DISTINCT data_emissao FROM franchise_report WHERE destino = ? AND data_emissao IS NOT NULL AND data_emissao != "";', [destino], (err, rows) => {
                         if (err) reject(err);
                         else resolve(rows.map(row => row.data_emissao));
                     });
                 });
 
-                // Converter para formato YYYYMMDD para comparação
                 const presentDatesFormatted = new Set(
                     presentDatesRaw.map(dateStr => {
                         if (!dateStr || dateStr.length !== 10 || dateStr.indexOf('/') === -1) {
-                            return null; // Ignora datas inválidas
+                            return null;
                         }
                         const [d, m, y] = dateStr.split('/');
                         return `${y}${m}${d}`;
-                    }).filter(Boolean) // Remove nulos
+                    }).filter(Boolean)
                 );
 
                 for (let d = new Date(thirtyDaysAgo); d <= today; d.setDate(d.getDate() + 1)) {

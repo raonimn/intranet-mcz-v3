@@ -1,5 +1,4 @@
 // backend/database.js
-
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
@@ -62,28 +61,21 @@ const createSefazReportTable = () => {
             else {
                 debugLog("Tabela sefaz_report criada com sucesso ou já existente.");
                 db.run(`
-                    CREATE TRIGGER IF NOT EXISTS evitar_duplicatas
+                    CREATE TRIGGER IF NOT EXISTS evitar_duplicatas_sefaz
                     BEFORE INSERT ON sefaz_report
                     WHEN EXISTS (SELECT 1 FROM sefaz_report WHERE chave_nfe = NEW.chave_nfe)
                     BEGIN
-                        SELECT RAISE(ABORT, 'Inserção cancelada. chave_nfe duplicada.');
+                        SELECT RAISE(ABORT, 'Inserção cancelada. chave_nfe duplicada em sefaz_report.');
                     END;
                 `, (err) => {
-                    if (err) { debugError("Erro ao criar trigger 'evitar_duplicatas' para sefaz_report:", err.message); reject(err); }
-                    else { debugLog("Trigger 'evitar_duplicatas' para sefaz_report criada ou já existente."); resolve(); }
+                    if (err) { debugError("Erro ao criar trigger 'evitar_duplicatas_sefaz' para sefaz_report:", err.message); reject(err); }
+                    else { debugLog("Trigger 'evitar_duplicatas_sefaz' para sefaz_report criada ou já existente."); resolve(); }
                     db.close((err) => { if (err) debugError('Erro ao fechar conexão após createSefazReportTable:', err.message); });
                 });
             }
         });
     });
 };
-
-// --- REMOVIDAS AS FUNÇÕES RELACIONADAS A termos_inseridos ---
-// const createTermosInseridosTable = () => { /* ... */ };
-// const clearTermosInseridosTable = () => { /* ... */ };
-// const insertNumeroTermo = (numero_termo) => { /* ... */ };
-// --- FIM DA REMOÇÃO ---
-
 
 const insertSefazReportData = (dados, numeroVoo, dataRegistro) => {
     return new Promise((resolve) => {
@@ -125,11 +117,11 @@ const insertSefazReportData = (dados, numeroVoo, dataRegistro) => {
                         totalProcessed++;
 
                         await new Promise((res) => {
-                            debugLog('Verificando dado para inserção em sefaz_report. Chave MDF-e:', dado[1], 'Dado completo:', dado);
+                            debugLog('Verificando dado para inserção em sefaz_report. Chave NF-e:', dado[3], 'Dado completo:', dado);
                             stmt.run(dado[0], dado[1], dado[2], dado[3], dado[4], dado[5], numeroVoo, dataRegistro, function (runErr) {
                                 if (runErr) {
-                                    if (runErr.message.includes('SQLITE_CONSTRAINT_UNIQUE') || runErr.message.includes('Inserção cancelada. chave_nfe duplicada.')) {
-                                        debugWarn(`Entrada duplicada para chave_nfe: ${dado[3]} em sefaz_report. (Erro: ${runErr.message}). Ignorando inserção.`);
+                                    if (runErr.message.includes('SQLITE_CONSTRAINT_UNIQUE') || runErr.message.includes('Inserção cancelada. chave_nfe duplicada em sefaz_report.')) {
+                                        debugWarn(`Entrada duplicada para chave_nfe: ${dado[3]} em sefaz_report. Ignorando inserção.`);
                                         duplicateCount++;
                                     } else {
                                         debugError("Erro INESPERADO ao inserir dado em sefaz_report:", runErr.message, 'Dado:', dado);
@@ -173,8 +165,6 @@ const insertSefazReportData = (dados, numeroVoo, dataRegistro) => {
                         db.close();
                         resolve({ insertedCount, duplicateCount, totalProcessed });
                     });
-                } finally {
-                    // Removido db.close() daqui, pois ele é chamado após commit/rollback/finalize.
                 }
             });
         });
@@ -187,7 +177,7 @@ const insertOrUpdateFranchiseReport = (dados) => {
         debugLog(`Recebidos ${dados.length} registros para processamento.`);
 
         if (dados.length === 0) {
-            debugWarn('Nenhum dado para inserir/atualizar.');
+            debugWarn('Nenhum dado para inserir/atualizar em franchise_report.');
             return resolve();
         }
 
@@ -224,7 +214,6 @@ const insertOrUpdateFranchiseReport = (dados) => {
                             const notas = dado[6];
                             const destinatario = dado[7];
 
-
                             if (!awb || !chave_cte) {
                                 debugWarn(`Dado incompleto ou inválido no índice para franchise_report. AWB: '${awb}', Chave CT-e: '${chave_cte}'. Pulando registro.`);
                                 completedOperations++;
@@ -236,12 +225,12 @@ const insertOrUpdateFranchiseReport = (dados) => {
                                 stmt.run(awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario, function(runErr) {
                                     if (runErr) {
                                         if (runErr.message.includes('SQLITE_CONSTRAINT_PRIMARYKEY') || runErr.message.includes('SQLITE_CONSTRAINT_UNIQUE')) {
-                                            debugWarn(`Entrada duplicada ou PK inválida para AWB: ${awb}. Inserção ignorada.`);
-                                            res();
+                                            debugWarn(`Entrada duplicada ou PK inválida para AWB: ${awb} em franchise_report. Inserção ignorada.`);
+                                            res(); // Resolve mesmo em caso de duplicidade para continuar a transação
                                         } else {
                                             debugError('Erro FATAL ao inserir dados na tabela franchise_report:', runErr.message, 'Dados:', dado);
                                             hasFatalError = true;
-                                            rej(runErr);
+                                            rej(runErr); // Rejeita em caso de erro fatal
                                         }
                                     } else {
                                         debugLog(`Registro inserido/atualizado (temporário) para AWB: ${awb}`);
@@ -286,8 +275,9 @@ const insertOrUpdateFranchiseReport = (dados) => {
 
                     } catch (loopOrFinalizeError) {
                         debugError("Erro geral no insertOrUpdateFranchiseReport ou durante finalização:", loopOrFinalizeError.message);
-                        if (!hasFatalError) {
+                        if (!hasFatalError) { // Só faz rollback se ainda não houver um erro fatal
                             db.run('ROLLBACK', () => {
+                                debugLog('Rollback da transação franchise_report realizado devido a erro inesperado.');
                                 db.close();
                                 reject(loopOrFinalizeError);
                             });
@@ -304,8 +294,6 @@ module.exports = {
     createConnection,
     createFranchiseReportTable,
     createSefazReportTable,
-    // clearTermosInseridosTable,  // REMOVIDO
-    // insertNumeroTermo,          // REMOVIDO
     insertOrUpdateFranchiseReport,
     insertSefazReportData,
 };

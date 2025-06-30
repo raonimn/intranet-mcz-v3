@@ -1,6 +1,4 @@
 // frontend/src/components/CombinedData.jsx
-
-
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -9,6 +7,7 @@ import Toast from 'react-bootstrap/Toast';
 import ToastContainer from 'react-bootstrap/ToastContainer';
 import ImportActions from './ImportActions';
 
+// Função auxiliar para máscara de data (mantida)
 const applyDateMask = (value) => {
     value = value.replace(/\D/g, "");
     if (value.length > 4) {
@@ -19,27 +18,15 @@ const applyDateMask = (value) => {
     return value;
 };
 
+// TooltipWrapper simplificado para usar atributos Bootstrap diretamente
 const TooltipWrapper = ({ children, title }) => {
-    const tooltipRef = useRef(null);
-
-    useEffect(() => {
-        let tooltipInstance = null;
-        if (tooltipRef.current && window.bootstrap && window.bootstrap.Tooltip) {
-            tooltipInstance = new window.bootstrap.Tooltip(tooltipRef.current, {
-                title: title,
-                placement: "top",
-                trigger: "hover",
-                container: "body",
-            });
-        }
-        return () => {
-            if (tooltipInstance) {
-                tooltipInstance.dispose();
-            }
-        };
-    }, [title]);
-
-    return <span ref={tooltipRef}>{children}</span>;
+    // Usamos data-bs-title para que o Bootstrap inicialize o tooltip automaticamente
+    // e title para o fallback em navegadores que não suportam ou JS desabilitado.
+    return (
+        <span data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title={title} title={title}>
+            {children}
+        </span>
+    );
 };
 
 
@@ -54,6 +41,7 @@ function CombinedData() {
 
     const [awbsByDestination, setAwbsByDestination] = useState([]);
     const [missingDates, setMissingDates] = useState({});
+    // Removido: const [totalAwbs, setTotalAwbs] = useState(0); // Este estado será calculado agora
 
     const [isProcessing, setIsProcessing] = useState(false);
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -62,6 +50,16 @@ function CombinedData() {
 
     const showAppToast = useCallback((title, message, type) => {
         setToast({ show: true, title, message, type });
+    }, []);
+
+    // Função para inicializar todos os tooltips no DOM
+    const initializeTooltips = useCallback(() => {
+        // Dispose de tooltips existentes para evitar duplicidade
+        const existingTooltips = document.querySelectorAll('.tooltip');
+        existingTooltips.forEach(tooltip => tooltip.remove());
+
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(tooltipTriggerEl => new window.bootstrap.Tooltip(tooltipTriggerEl));
     }, []);
 
     // TODAS AS FUNÇÕES DE BUSCA DECLARADAS PRIMEIRO
@@ -73,10 +71,14 @@ function CombinedData() {
                 `${BACKEND_URL}/api/awbs-by-destination`
             );
             setAwbsByDestination(response.data);
+            // Calculando o total aqui e definindo diretamente no componente
+            // const calculatedTotal = response.data.reduce((sum, item) => sum + item.total_awbs, 0);
+            // setTotalAwbs(calculatedTotal); // Removido, será calculado no JSX ou em uma variável
         } catch (err) {
             console.error("Erro ao buscar AWBs por destino:", err);
+            showAppToast('Erro', 'Falha ao carregar AWBs por destino.', 'danger');
         }
-    }, [BACKEND_URL]);
+    }, [BACKEND_URL, showAppToast]);
 
     const fetchMissingDates = useCallback(async () => {
         try {
@@ -84,8 +86,12 @@ function CombinedData() {
             setMissingDates(response.data);
         } catch (err) {
             console.error("Erro ao buscar datas faltantes:", err);
+            showAppToast('Erro', 'Falha ao carregar datas faltantes.', 'danger');
         }
-    }, [BACKEND_URL]);
+    }, [BACKEND_URL, showAppToast]);
+
+    // Removida a função fetchTotalAwbs
+
 
     // fetchData agora pode chamar as outras funções sem problema de inicialização
     const fetchData = useCallback(async () => {
@@ -110,10 +116,12 @@ function CombinedData() {
                 (err.response?.data?.message || err.message)
             );
             console.error("Erro ao buscar dados combinados:", err);
+            showAppToast('Erro', `Falha ao carregar dados combinados: ${err.response?.data?.message || err.message}`, 'danger');
         } finally {
             setLoading(false);
+            initializeTooltips(); // Inicializa tooltips após os dados serem carregados/atualizados
         }
-    }, [activeFilterVoo, activeFilterData, BACKEND_URL]);
+    }, [activeFilterVoo, activeFilterData, BACKEND_URL, showAppToast, initializeTooltips]);
 
 
     const handleProcessingChange = useCallback((processing) => {
@@ -122,6 +130,7 @@ function CombinedData() {
             fetchData(); // Recarrega dados da tabela principal
             fetchAwbsByDestination(); // Recarrega dados do card de AWB por destino
             fetchMissingDates(); // Recarrega dados do card de datas faltantes
+            // Removida a chamada a fetchTotalAwbs aqui
         }
     }, [fetchData, fetchAwbsByDestination, fetchMissingDates]);
 
@@ -131,7 +140,9 @@ function CombinedData() {
         fetchData();
         fetchAwbsByDestination();
         fetchMissingDates();
-    }, [fetchData, fetchAwbsByDestination, fetchMissingDates]); // Inclui todas as funções de busca como dependências
+        // Removida a chamada a fetchTotalAwbs aqui
+        initializeTooltips(); // Inicializa tooltips na montagem do componente
+    }, [fetchData, fetchAwbsByDestination, fetchMissingDates, initializeTooltips]);
 
 
     const handleTempVooChange = (event) => {
@@ -148,21 +159,32 @@ function CombinedData() {
         setActiveFilterData(tempFilterData);
     };
 
-    const copyToClipboard = (text, type) => {
-        navigator.clipboard
-            .writeText(text)
-            .then(() => {
-                showAppToast('Copiado!', `${type} copiado: ${text}`, 'info');
-            })
-            .catch((err) => {
-                console.error("Erro ao copiar para a área de transferência:", err);
-                showAppToast('Erro', 'Erro ao copiar. Por favor, tente novamente.', 'danger');
-            });
-    };
+    // Função de cópia genérica, melhorada para robustez
+    const copyToClipboard = useCallback(async (text, type) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            showAppToast('Copiado!', `${type} copiado: ${text}`, 'info');
+        } catch (err) {
+            console.error("Erro ao copiar para a área de transferência:", err);
+            showAppToast('Erro', 'Erro ao copiar. Por favor, tente novamente.', 'danger');
+        }
+    }, [showAppToast]);
+
+    // Nova função para copiar os últimos 8 dígitos do AWB
+    const copyAwbLast8Digits = useCallback((awb) => {
+        if (awb && awb.length >= 8) {
+            const last8Digits = awb.slice(-8);
+            copyToClipboard(last8Digits, "AWB (8 últimos dígitos)");
+        } else {
+            showAppToast('Aviso', 'AWB muito curto para copiar 8 dígitos.', 'warning');
+        }
+    }, [copyToClipboard, showAppToast]);
 
     const formatNumber = (num) => new Intl.NumberFormat("pt-BR").format(num);
 
-    // ... (restante do JSX do componente) ...
+    // Calcular o total de AWBs diretamente a partir de awbsByDestination
+    const totalAwbsCalculated = awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0);
+
     return (
         <div className="container my-4">
             {/* Overlay de carregamento */}
@@ -187,10 +209,10 @@ function CombinedData() {
 
             {/* Toast Container */}
             <ToastContainer position="top-end" className="p-3" style={{ zIndex: 1051 }}>
-                <Toast 
-                    onClose={() => setToast({ ...toast, show: false })} 
-                    show={toast.show} 
-                    delay={5000} 
+                <Toast
+                    onClose={() => setToast({ ...toast, show: false })}
+                    show={toast.show}
+                    delay={5000}
                     autohide
                     bg={toast.type}
                 >
@@ -206,7 +228,7 @@ function CombinedData() {
             {/* Componente para as ações de importação */}
             <ImportActions onProcessingChange={handleProcessingChange} showToast={showAppToast} />
 
-            {/* Cards de sumário (Registros e Datas Faltantes) */}
+            {/* Cards de sumário (Registros, Datas Faltantes e Malha de Voos) */}
             {loading ? (
                 <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '150px' }}>
                     <div className="spinner-border text-secondary" role="status">
@@ -215,38 +237,40 @@ function CombinedData() {
                 </div>
             ) : (
                 <div className="row mb-4 g-3">
-                    <div className="col-md-6 mb-3 mb-md-0">
+                    <div className="col-md-4 mb-3 mb-md-0"> {/* Ajustado para col-md-4 para 3 colunas */}
                         <div className="card h-100">
                             <div className="card-header">
                                 <h5 className="mb-0">Registros no Banco (AWBs por Destino)</h5>
                             </div>
                             <div className="card-body" style={{ maxHeight: "300px", overflowY: "auto" }}>
                                 <ul className="list-group list-group-flush">
-                                    <b>
-                                        {awbsByDestination.length === 0 ? (
-                                            <li className="list-group-item">
-                                                Nenhum dado de destino encontrado.
+                                    {awbsByDestination.length === 0 ? (
+                                        <li className="list-group-item">
+                                            Nenhum dado de destino encontrado.
+                                        </li>
+                                    ) : (
+                                        awbsByDestination.map((item, idx) => (
+                                            <li
+                                                key={idx}
+                                                className="list-group-item d-flex justify-content-between align-items-center"
+                                            >
+                                                {item.destino || "N/A"}
+                                                <span className="badge bg-primary rounded-pill">
+                                                    {formatNumber(item.total_awbs)}
+                                                </span>
                                             </li>
-                                        ) : (
-                                            awbsByDestination.map((item, idx) => (
-                                                <li
-                                                    key={idx}
-                                                    className="list-group-item d-flex justify-content-between align-items-center"
-                                                >
-                                                    {item.destino || "N/A"}
-                                                    <span className="badge bg-primary rounded-pill">
-                                                        {formatNumber(item.total_awbs)}
-                                                    </span>
-                                                </li>
-                                            ))
-                                        )}
-                                    </b>
+                                        ))
+                                    )}
                                 </ul>
+                            </div>
+                            {/* Nova linha de total no footer do card */}
+                            <div className="card-footer text-end">
+                                <strong>Total de AWBs: {formatNumber(totalAwbsCalculated)}</strong>
                             </div>
                         </div>
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-md-4"> {/* Ajustado para col-md-4 para 3 colunas */}
                         <div className="card h-100">
                             <div className="card-header">
                                 <h5 className="mb-0">Datas Faltantes (últimos 30 dias)</h5>
@@ -268,6 +292,27 @@ function CombinedData() {
                                         ))
                                     )}
                                 </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* NOVO CARD: Malha de Voos (placeholder) - Funcionalidade 5 */}
+                    <div className="col-md-4">
+                        <div className="card h-100">
+                            <div className="card-header">
+                                <h5 className="mb-0">Malha de Voos (Próxima Funcionalidade)</h5>
+                            </div>
+                            <div className="card-body d-flex flex-column justify-content-center align-items-center">
+                                <p className="text-muted text-center">
+                                    Conteúdo da malha de voos será exibido aqui.
+                                </p>
+                                <p className="text-muted text-center small">
+                                    (Funcionalidade em desenvolvimento)
+                                </p>
+                                {/* Opcional: Um spinner ou ícone indicando que está em construção */}
+                                <div className="spinner-grow text-info" role="status" style={{ width: '1.5rem', height: '1.5rem' }}>
+                                    <span className="visually-hidden">Carregando...</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -344,7 +389,7 @@ function CombinedData() {
                                 <tr key={index}>
                                     <td>{row.numero_termo || "N/A"}</td>
                                     <td>{row.data_registro || "N/A"}</td>
-                                    <td>
+                                    <td onClick={() => copyAwbLast8Digits(row.awb)} style={{ cursor: "pointer" }}> {/* Funcionalidade 3 */}
                                         <b>{row.awb || "N/A"}</b>
                                     </td>
                                     <td>{row.franchise_data_emissao || "N/A"}</td>
@@ -357,12 +402,13 @@ function CombinedData() {
                                     <td>{row.numero_voo || "N/A"}</td>
                                     <td>
                                         {row.chave_nfe ? (
-                                            <TooltipWrapper title={row.chave_nfe}>
+                                            <TooltipWrapper title={row.chave_nfe}> {/* Funcionalidade 2 */}
                                                 <FontAwesomeIcon
                                                     icon={faCopy}
-                                                    onClick={() =>
-                                                        copyToClipboard(row.chave_nfe, "Chave NFe")
-                                                    }
+                                                    onClick={(e) => { // Previne propagação para não acionar o click da TD
+                                                        e.stopPropagation();
+                                                        copyToClipboard(row.chave_nfe, "Chave NFe");
+                                                    }}
                                                     style={{ cursor: "pointer", color: "#007bff" }}
                                                 />
                                             </TooltipWrapper>
@@ -372,12 +418,13 @@ function CombinedData() {
                                     </td>
                                     <td>
                                         {row.chave_mdfe ? (
-                                            <TooltipWrapper title={row.chave_mdfe}>
+                                            <TooltipWrapper title={row.chave_mdfe}> {/* Funcionalidade 2 */}
                                                 <FontAwesomeIcon
                                                     icon={faCopy}
-                                                    onClick={() =>
-                                                        copyToClipboard(row.chave_mdfe, "Chave MDFe")
-                                                    }
+                                                    onClick={(e) => { // Previne propagação para não acionar o click da TD
+                                                        e.stopPropagation();
+                                                        copyToClipboard(row.chave_mdfe, "Chave MDFe");
+                                                    }}
                                                     style={{ cursor: "pointer", color: "#007bff" }}
                                                 />
                                             </TooltipWrapper>

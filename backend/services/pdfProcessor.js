@@ -25,7 +25,7 @@ async function processPdfAndSaveData(pdfBuffer, numeroVoo, dataRegistro) {
 
         if (extractedData.length === 0) {
             debugWarn('Nenhum dado válido foi extraído do PDF. Nenhuma inserção será feita.');
-            return { success: true, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, message: 'Nenhum dado válido foi extraído do PDF.' };
+            return { success: true, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, extractedData: [], message: 'Nenhum dado válido foi extraído do PDF.' }; // ADICIONADO extractedData vazio
         }
 
         debugLog('Iniciando inserção de dados principais em sefaz_report...');
@@ -33,15 +33,16 @@ async function processPdfAndSaveData(pdfBuffer, numeroVoo, dataRegistro) {
         debugLog('Inserção de dados principais em sefaz_report concluída.');
 
         debugLog("Processamento do PDF e dados salvos com sucesso no SQLite.");
-        return { success: true, insertedCount, duplicateCount, totalProcessed, message: 'PDF processado com sucesso.' };
+        return { success: true, insertedCount, duplicateCount, totalProcessed, extractedData: extractedData, message: 'PDF processado com sucesso.' }; // ADICIONADO extractedData
 
     } catch (error) {
         debugError("Erro durante o processamento do PDF e salvamento no SQLite:", error);
-        return { success: false, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, message: error.message || 'Erro desconhecido durante o processamento do PDF.' };
+        return { success: false, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, extractedData: [], message: error.message || 'Erro desconhecido durante o processamento do PDF.' }; // ADICIONADO extractedData vazio
     } finally {
         debugLog('--- Fim de processPdfAndSaveData ---');
     }
 }
+
 
 // Função auxiliar para extrair dados com base em um padrão regex
 function extractDataOrNone(text, pattern) {
@@ -71,7 +72,7 @@ function extractDataFromPdfText(pdf_text) {
     }
 
     const data_emissao = extractDataOrNone(pdf_text, /Data de Emissão\s*[\n\r]+\s*(\d{2}\/\d{2}\/\d{4})/) ||
-                        extractDataOrNone(pdf_text, /Data:(\d{2}\/\d{2}\/\d{4})/);
+        extractDataOrNone(pdf_text, /Data:(\d{2}\/\d{2}\/\d{4})/);
 
     // Regex para capturar a Chave do MDF-e (44 dígitos, pode ter um CNPJ antes)
     const chave_mdfe_regex = /(?:\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s+)?(\d{44})/;

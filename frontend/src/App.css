@@ -1,189 +1,123 @@
 /* frontend/src/App.css */
 
 body {
-    font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
-#root {
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
+/* Base para o conteúdo principal */
+.content {
+    transition: margin-left 0.3s ease-in-out; /* Transição para o deslocamento */
+    margin-left: 0; /* Posição inicial */
 }
 
-/* Os estilos .container e de texto (h1, h2, h3) serão majoritariamente gerenciados pelo Bootstrap,
-   mas você pode manter algumas personalizações se quiser. */
-.container {
-    /* Remova ou ajuste larguras e sombras se Bootstrap já as define. */
+/* Deslocamento do conteúdo quando o sidebar (Drawer) está aberto */
+.content.content-shifted {
+    margin-left: 280px; /* Largura do Drawer */
 }
 
-h1, h2, h3 {
-    color: #333; /* Mantém a cor */
-    text-align: center; /* Mantém o alinhamento */
-    text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.1); /* Mantém a sombra */
-    margin-bottom: 20px; /* Ajuste conforme a necessidade de espaçamento Bootstrap */
+/* Ajustes para o ToastContainer do react-bootstrap para ficar acima de tudo */
+.ToastContainer {
+    z-index: 2000 !important; /* Acima de modais e overlays */
 }
 
-.navbar {
-    background-color: #333;
-    padding: 15px 20px;
-    text-align: center;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+
+/* Media Queries para responsividade
+   Em telas pequenas (md e abaixo), o sidebar flutuará sobre o conteúdo,
+   então não haverá deslocamento de margin.
+*/
+@media (max-width: 991.98px) { /* Em telas menores que 'lg' (992px) */
+    .content.content-shifted {
+        margin-left: 0; /* Remove o deslocamento em telas pequenas */
+    }
+
+    /* Opcional: Estilo para o overlay quando o Drawer está aberto em mobile.
+       O MUI Drawer já cria um backdrop por padrão, mas você pode querer personalizar.
+    */
+    .MuiDrawer-modal { /* Classe para o modal/backdrop do Drawer */
+        z-index: 1200; /* Garante que o backdrop esteja abaixo do Drawer e acima do conteúdo */
+    }
 }
 
-.navbar a {
-    color: white;
-    text-decoration: none;
-    padding: 10px 15px;
-    margin: 0 10px;
-    border-radius: 5px;
-    transition: background-color 0.3s ease;
-}
-
-.navbar a:hover {
-    background-color: #575757;
-}
-
-.button-container {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 20px;
-    margin-top: 30px;
-}
-
-.import-button {
-    padding: 15px 25px;
-    font-size: 16px;
-    background-color: #4CAF50;
-    color: white;
-    border: 1px solid #4CAF50;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.3s, border 0.3s;
-    min-width: 200px;
-    text-align: center;
-    text-decoration: none;
-    display: inline-block;
-}
-
-.import-button:hover {
-    background-color: #45a049;
-    border: 1px solid #45a049;
-}
-
-form {
-    display: flex;
-    flex-direction: column;
+/* Estilo para garantir que o dropdown do Bootstrap se encaixe bem no MUI Drawer */
+.MuiDrawer-paper .dropdown-toggle {
+    display: flex; /* Para alinhar ícone e texto */
     align-items: center;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    justify-content: flex-start;
+    padding: 8px 16px; /* Espaçamento interno */
+    border-radius: 4px;
+    color: #dee2e6; /* Cor do texto */
+    transition: background-color 0.2s, color 0.2s;
 }
 
-input[type=file] {
-    display: none;
-}
-
-label {
-    /* Muitos desses estilos serão sobrescritos ou substituídos pelo Bootstrap form-label/btn */
-    display: inline-block;
-    background-color: #3498db;
+.MuiDrawer-paper .dropdown-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.08); /* Hover effect */
     color: #fff;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background 0.3s ease;
-    margin-top: 10px;
 }
 
-label:hover {
-    background-color: #2980b9;
-}
-
-/* Botões de submit (geral, podem ser ajustados para usar classes Bootstrap como .btn .btn-success) */
-button[type="submit"] {
-    margin-top: 20px;
-    padding: 12px 25px;
-    background-color: #2ecc71; /* Cor de exemplo, use .btn-success do Bootstrap */
-    color: #fff;
+.MuiDrawer-paper .dropdown-menu.show {
+    background-color: #495057; /* Cor do fundo do menu suspenso */
     border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background 0.3s ease;
-    font-size: 1em;
-    display: flex;
+    box-shadow: 0px 8px 16px rgba(0,0,0,0.2);
+    min-width: 200px; /* Largura mínima para o dropdown */
+}
+
+.MuiDrawer-paper .dropdown-item {
+    color: #dee2e6;
+    display: flex; /* Para alinhar ícone e texto do item */
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    padding: 8px 16px;
 }
 
-button[type="submit"]:hover {
-    background-color: #27ae60;
+.MuiDrawer-paper .dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.12); /* Hover nos itens */
+    color: #fff;
 }
 
-button[type="submit"]:disabled {
-    background-color: #cccccc;
+.MuiDrawer-paper .dropdown-item.disabled {
+    opacity: 0.5;
     cursor: not-allowed;
 }
 
-#fileListContainer {
-    margin-top: 20px;
-    text-align: center;
+/* Estilo para os labels e inputs do MUI dentro do Drawer */
+.MuiDrawer-paper .MuiInputLabel-root {
+    color: #ccc; /* Cor dos labels */
 }
 
-#fileListTitle {
-    font-weight: bold;
-    margin-bottom: 5px;
+.MuiDrawer-paper .MuiOutlinedInput-root {
+    & fieldset {
+        border-color: #555; /* Cor da borda do input não focado */
+    }
+    &:hover fieldset {
+        border-color: #777; /* Cor da borda ao passar o mouse */
+    }
+    &.Mui-focused fieldset {
+        border-color: #1976d2; /* Cor da borda ao focar (cor primária do MUI) */
+    }
 }
 
-#fileList p {
-    margin: 5px 0;
-    font-style: italic;
+.MuiDrawer-paper .MuiInputBase-input {
+    color: #fff; /* Cor do texto digitado no input */
 }
 
-/* Estilos de tabela serão majoritariamente Bootstrap (.table, .table-striped, etc.) */
-table {
-    /* Remova estilos customizados para usar Bootstrap */
+.MuiDrawer-paper .MuiSvgIcon-root {
+    color: #ccc; /* Cor dos ícones dentro dos inputs (ex: calendário) */
 }
 
-th, td {
-    /* Remova estilos customizados para usar Bootstrap */
+/* Ajustes para o DatePicker do MUI */
+.MuiPickersLayout-root {
+    background-color: #424242; /* Fundo do calendário */
+    color: #fff;
+}
+.MuiPickersCalendarHeader-root,
+.MuiPickersArrowSwitcher-root,
+.MuiPickersDay-root {
+    color: #fff;
+}
+.MuiPickersDay-root.Mui-selected {
+    background-color: #1976d2; /* Cor da seleção */
 }
 
-/* th { ... } */
-/* tr:nth-child(even) { ... } */
-/* tr:hover { ... } */
-
-.message-success {
-    color: green;
-    font-weight: bold;
-    margin-top: 15px;
-    text-align: center;
-}
-
-.message-error {
-    color: red;
-    font-weight: bold;
-    margin-top: 15px;
-    text-align: center;
-}
-
-/* Estilos para o spinner */
-.spinner {
-    border: 4px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    border-top: 4px solid #fff;
-    width: 16px;
-    height: 16px;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+/* Cor do texto para os badges (mantido do Bootstrap) */
+.badge {
+    color: #fff; /* Garante que o texto dentro do badge seja branco para contraste */
 }

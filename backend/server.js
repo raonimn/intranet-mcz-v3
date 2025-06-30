@@ -117,6 +117,8 @@ initializeDatabase().then(() => {
         }
 
         try {
+            // A função processPdfAndSaveData agora retorna um objeto com insertedCount, duplicateCount, etc.
+            // E também retorna os dados extraídos para o frontend exibir
             const result = await processPdfAndSaveData(file.buffer, numeroVoo, dataRegistro);
 
             const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
@@ -126,7 +128,8 @@ initializeDatabase().then(() => {
                     success: true,
                     message: `Voo ${numeroVoo} do dia ${dataRegistro} processado com sucesso.`,
                     recordsProcessed: result.insertedCount,
-                    additionalInfo: `Inseridos ${formatNumber(result.insertedCount)} notas. (${formatNumber(result.duplicateCount)} duplicidades ignoradas).`
+                    additionalInfo: `Inseridos ${formatNumber(result.insertedCount)} notas. (${formatNumber(result.duplicateCount)} duplicidades ignoradas).`,
+                    extractedData: result.extractedData // ADICIONADO: dados extraídos para o frontend
                 });
             } else {
                 res.status(500).json({ success: false, message: result.message || 'Erro ao processar o PDF.' });
@@ -224,7 +227,7 @@ initializeDatabase().then(() => {
 
     // API para consultar os dados combinados (tabela principal)
     app.get('/api/combined-data-specific', async (req, res) => {
-        const { numeroVoo, dataRegistro } = req.query;
+        const { numeroVoo, dataRegistro, awb, numeroTermo, destino } = req.query; // Adicionar novos parâmetros
         let conn;
         try {
             conn = createConnection();
@@ -232,13 +235,18 @@ initializeDatabase().then(() => {
             let whereClauses = [];
             let params = [];
 
+            // Filtro para Voo
             if (numeroVoo && numeroVoo.trim() !== '') {
+                let formattedVoo = numeroVoo.trim();
+                if (formattedVoo.length === 4) { // Se 4 caracteres, prefixar com 'AD'
+                    formattedVoo = `AD${formattedVoo}`;
+                }
                 whereClauses.push('sr.numero_voo LIKE ?');
-                params.push(`%${numeroVoo.trim()}%`);
+                params.push(`%${formattedVoo}%`);
             }
 
+            // Filtro para Data do Registro (Termo)
             if (dataRegistro && dataRegistro.trim() !== '') {
-                // Converte a data de DD/MM/YYYY para YYYYMMDD para comparação numérica
                 const [d, m, y] = dataRegistro.trim().split('/');
                 const formattedDate = `${y}${m}${d}`;
                 whereClauses.push('CAST(SUBSTR(sr.data_registro, 7, 4) || SUBSTR(sr.data_registro, 4, 2) || SUBSTR(sr.data_registro, 1, 2) AS INTEGER) = ?');
@@ -262,6 +270,28 @@ initializeDatabase().then(() => {
                 whereClauses.push('CAST(SUBSTR(sr.data_registro, 7, 4) || SUBSTR(sr.data_registro, 4, 2) || SUBSTR(sr.data_registro, 1, 2) AS INTEGER) BETWEEN ? AND ?');
                 params.push(parseInt(twoDaysAgoFormattedForQuery, 10));
                 params.push(parseInt(todayFormattedForQuery, 10));
+            }
+
+            // NOVO FILTRO: AWB
+            if (awb && awb.trim() !== '') {
+                let formattedAwb = awb.trim();
+                if (!formattedAwb.startsWith('577')) { // Adiciona prefixo se não tiver
+                    formattedAwb = `577${formattedAwb}`;
+                }
+                whereClauses.push('fr.awb LIKE ?');
+                params.push(`%${formattedAwb}%`);
+            }
+
+            // NOVO FILTRO: Número do Termo
+            if (numeroTermo && numeroTermo.trim() !== '') {
+                whereClauses.push('sr.numero_termo = ?');
+                params.push(numeroTermo.trim());
+            }
+
+            // NOVO FILTRO: Destino
+            if (destino && destino.trim() !== '') {
+                whereClauses.push('fr.destino = ?');
+                params.push(destino.toUpperCase().trim());
             }
 
             const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -341,7 +371,7 @@ initializeDatabase().then(() => {
             if (conn) conn.close();
         }
     });
-    
+
     // --- Rota: Datas Faltantes por Destino ---
     app.get('/api/missing-dates', async (req, res) => {
         const conn = createConnection();

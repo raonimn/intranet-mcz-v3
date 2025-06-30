@@ -1,12 +1,15 @@
 // frontend/src/components/ImportActions.jsx
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import axios from 'axios';
-import { Modal, Button, Form, Row, Col } from 'react-bootstrap'; // <-- Adicionado Row e Col aqui
-import DatePicker from 'react-datepicker'; // Para o seletor de data
-import 'react-datepicker/dist/react-datepicker.css'; // Estilos do seletor de data
+import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
+// Removido: import DatePicker from 'react-datepicker';
+// Removido: import 'react-datepicker/dist/react-datepicker.css';
 
-// Funções auxiliares (copiadas de CombinedData.jsx ou de um arquivo de utils comum)
+// Usar DatePicker do MUI (se a importação for via este modal)
+import { DatePicker as MuiDatePicker } from '@mui/x-date-pickers/DatePicker';
+import { TextField } from '@mui/material'; // Usar TextField do MUI para o input de texto do voo
+
+// Funções auxiliares (manter ou mover para utils.js)
 const formatDateToDDMMYYYY = (date) => {
     if (!date) return '';
     const day = String(date.getDate()).padStart(2, '0');
@@ -15,26 +18,32 @@ const formatDateToDDMMYYYY = (date) => {
     return `${day}/${month}/${year}`;
 };
 
-const ImportActions = ({ onProcessingChange, showToast }) => {
+// Envolver o componente com forwardRef
+const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
     const [showFranchiseModal, setShowFranchiseModal] = useState(false);
     const [showTermosModal, setShowTermosModal] = useState(false);
 
     const [franchiseFile, setFranchiseFile] = useState(null);
-    const franchiseFileInputRef = useRef(null); // Ref para resetar o input file
+    const franchiseFileInputRef = useRef(null);
 
     const [termosFile, setTermosFile] = useState(null);
-    const termosFileInputRef = useRef(null); // Ref para resetar o input file
+    const termosFileInputRef = useRef(null);
     const [numeroVoo, setNumeroVoo] = useState('');
-    const [dataRegistro, setDataRegistro] = useState(new Date()); // Usará objeto Date para DatePicker
+    const [dataRegistro, setDataRegistro] = useState(new Date());
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
+    // Expor métodos para o componente pai via useImperativeHandle
+    useImperativeHandle(ref, () => ({
+        showFranchiseModal: () => setShowFranchiseModal(true),
+        showTermosModal: () => setShowTermosModal(true),
+    }));
+
     // --- Frachise Report Modal Handlers ---
-    const handleShowFranchiseModal = () => setShowFranchiseModal(true);
     const handleCloseFranchiseModal = () => {
         setShowFranchiseModal(false);
         setFranchiseFile(null);
-        if (franchiseFileInputRef.current) franchiseFileInputRef.current.value = ''; // Reseta input file
+        if (franchiseFileInputRef.current) franchiseFileInputRef.current.value = '';
     };
 
     const handleFranchiseFileChange = (e) => setFranchiseFile(e.target.files[0]);
@@ -46,8 +55,8 @@ const ImportActions = ({ onProcessingChange, showToast }) => {
             return;
         }
 
-        onProcessingChange(true); // Ativa o overlay de carregamento
-        handleCloseFranchiseModal(); // Fecha o modal
+        onProcessingChange(true, 'franchise'); // Indica que um processamento de franchise iniciou
+        handleCloseFranchiseModal();
 
         const formData = new FormData();
         formData.append('xlsx_file', franchiseFile);
@@ -61,24 +70,21 @@ const ImportActions = ({ onProcessingChange, showToast }) => {
             showToast('Erro', error.response?.data?.message || 'Erro ao processar o arquivo Franchise Report.', 'danger');
             console.error('Erro no upload Franchise:', error);
         } finally {
-            onProcessingChange(false); // Desativa o overlay
+            onProcessingChange(false, 'franchise'); // Indica que um processamento de franchise finalizou
         }
     };
 
     // --- Termos SEFAZ-AL Modal Handlers ---
-    const handleShowTermosModal = () => setShowTermosModal(true);
     const handleCloseTermosModal = () => {
         setShowTermosModal(false);
         setTermosFile(null);
         setNumeroVoo('');
-        setDataRegistro(new Date()); // Reseta para a data atual
-        if (termosFileInputRef.current) termosFileInputRef.current.value = ''; // Reseta input file
+        setDataRegistro(new Date());
+        if (termosFileInputRef.current) termosFileInputRef.current.value = '';
     };
 
     const handleTermosFileChange = (e) => setTermosFile(e.target.files[0]);
     const handleNumeroVooChange = (e) => setNumeroVoo(e.target.value);
-
-    // DatePicker já trabalha com objetos Date, mas a API espera string
     const handleDataRegistroChange = (date) => setDataRegistro(date);
 
     const handleTermosUpload = async (e) => {
@@ -91,41 +97,45 @@ const ImportActions = ({ onProcessingChange, showToast }) => {
             showToast('Erro', 'Por favor, informe o número do Voo.', 'danger');
             return;
         }
-        if (!dataRegistro) { // DataRegistro já é um objeto Date
+        if (!dataRegistro) {
             showToast('Erro', 'Por favor, informe a Data do Relatório.', 'danger');
             return;
         }
 
-        onProcessingChange(true); // Ativa o overlay de carregamento
-        handleCloseTermosModal(); // Fecha o modal
+        onProcessingChange(true, 'termos'); // Indica que um processamento de termos iniciou
+        handleCloseTermosModal();
 
         const formData = new FormData();
         formData.append('pdf_file', termosFile);
         formData.append('numeroVoo', numeroVoo);
-        formData.append('dataRegistro', formatDateToDDMMYYYY(dataRegistro)); // Converte para string dd/mm/yyyy
+        formData.append('dataRegistro', formatDateToDDMMYYYY(dataRegistro));
 
         try {
             const response = await axios.post(`${BACKEND_URL}/api/upload-pdf`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
             showToast('Sucesso', `${response.data.message} ${response.data.additionalInfo}`, 'success');
+            // Passar os dados extraídos para o componente pai para exibir no modal (Funcionalidade 8)
+            onProcessingChange(false, 'termos', response.data.extractedData); // Passa os dados extraídos
         } catch (error) {
             showToast('Erro', error.response?.data?.message || 'Erro ao processar o arquivo de Termos.', 'danger');
             console.error('Erro no upload Termos:', error);
-        } finally {
-            onProcessingChange(false); // Desativa o overlay
+            onProcessingChange(false, 'termos'); // Indica que um processamento de termos finalizou (sem dados)
         }
     };
 
 
     return (
         <div className="d-flex justify-content-center mb-4">
-            <Button variant="success" className="me-3" onClick={handleShowFranchiseModal}>
+            {/* Estes botões serão removidos e suas ações acionadas pelo Sidebar */}
+            {/*
+            <Button variant="success" className="me-3" onClick={() => setShowFranchiseModal(true)}>
                 Importar Franchise Report (SK)
             </Button>
-            <Button variant="success" onClick={handleShowTermosModal}>
+            <Button variant="success" onClick={() => setShowTermosModal(true)}>
                 Importar Termos (SEFAZ-AL)
             </Button>
+            */}
 
             {/* Modal para Importar Franchise Report */}
             <Modal show={showFranchiseModal} onHide={handleCloseFranchiseModal} centered>
@@ -152,33 +162,41 @@ const ImportActions = ({ onProcessingChange, showToast }) => {
                 </Modal.Header>
                 <Modal.Body>
                     <Form onSubmit={handleTermosUpload}>
-                        <Row className="mb-3"> {/* Nova Row para alinhar lado a lado */}
-                            <Col md={6}> {/* Coluna para Número do Voo */}
+                        <Row className="mb-3">
+                            <Col md={6}>
                                 <Form.Group>
                                     <Form.Label>Número do Voo:</Form.Label>
-                                    <Form.Control type="text" value={numeroVoo} onChange={handleNumeroVooChange} placeholder="Ex: AD1234" required />
+                                    {/* Usando TextField do MUI */}
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        value={numeroVoo}
+                                        onChange={handleNumeroVooChange}
+                                        placeholder="Ex: AD1234"
+                                        required
+                                    />
                                 </Form.Group>
                             </Col>
-                            <Col md={6}> {/* Coluna para Data do Relatório */}
+                            <Col md={6}>
                                 <Form.Group>
                                     <Form.Label>Data do Relatório:</Form.Label>
-                                    <DatePicker
-                                        selected={dataRegistro}
+                                    {/* Usando DatePicker do MUI */}
+                                    <MuiDatePicker
+                                        value={dataRegistro}
                                         onChange={handleDataRegistroChange}
-                                        dateFormat="dd/MM/yyyy"
-                                        className="form-control" // Aplica estilo do Bootstrap
-                                        required
+                                        format="dd/MM/yyyy"
+                                        slotProps={{ textField: { fullWidth: true, size: 'small', required: true } }}
                                     />
                                 </Form.Group>
                             </Col>
                         </Row>
 
-                        <Form.Group controlId="formFileTermos" className="mb-3"> {/* Campo de seleção de PDF */}
+                        <Form.Group controlId="formFileTermos" className="mb-3">
                             <Form.Label>Selecione o arquivo PDF:</Form.Label>
                             <Form.Control type="file" accept=".pdf" onChange={handleTermosFileChange} ref={termosFileInputRef} required />
                         </Form.Group>
 
-                        <Button variant="primary" type="submit" className="w-100"> {/* Botão de Upload */}
+                        <Button variant="primary" type="submit" className="w-100">
                             Upload
                         </Button>
                     </Form>
@@ -186,6 +204,6 @@ const ImportActions = ({ onProcessingChange, showToast }) => {
             </Modal>
         </div>
     );
-};
+});
 
 export default ImportActions;

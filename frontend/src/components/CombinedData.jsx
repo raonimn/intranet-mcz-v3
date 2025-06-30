@@ -310,7 +310,7 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
                     <div className="col-md-4 mb-3 mb-md-0">
                         <div className="card h-100">
                             <div className="card-header">
-                                <h5 className="mb-0">AWBs no banco</h5>
+                                <h5 className="mb-0">AWBs no Banco de Dados</h5>
                             </div>
                             <div className="card-body" style={{ maxHeight: "300px", overflowY: "auto" }}>
                                 <ul className="list-group list-group-flush">

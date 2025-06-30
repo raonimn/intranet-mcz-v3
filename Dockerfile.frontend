@@ -14,8 +14,21 @@ RUN npm install
 # Copy the rest of the application code
 COPY frontend/ .
 
-# Build the React app
-RUN npm run build
+# Build the React app, passing the VITE_BACKEND_URL as an argument
+# ARG VITE_BACKEND_URL_ARG # Define um argumento de build
+# ENV VITE_BACKEND_URL=$VITE_BACKEND_URL_ARG # Transforma o argumento em variável de ambiente
+# RUN npm run build # Isso funcionaria se o ARG/ENV fosse passado no docker compose build
+
+# Abordagem mais simples para garantir que a variável do docker-compose seja usada:
+# Injetar a variável de ambiente diretamente no comando de build
+# Ou, e talvez mais simples, garantir que o .env esteja no contexto de build do frontend
+# A forma mais robusta é usar `docker compose build --build-arg` ou garantir que o .env
+# seja lido corretamente pelo Vite dentro do contêiner.
+
+# Vamos tentar um método que força a injeção via Shell no RUN
+# Isso sobrescreve qualquer .env que o Vite possa encontrar, garantindo o IP correto.
+# A variável VITE_BACKEND_URL do `docker-compose.yml` será usada aqui.
+RUN VITE_BACKEND_URL=$VITE_BACKEND_URL npm run build
 
 # Stage 2: Serve the application with Nginx
 FROM nginx:alpine

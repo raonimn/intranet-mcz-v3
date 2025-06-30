@@ -40,10 +40,9 @@ const TooltipWrapper = ({ children, title }) => {
   );
 };
 
-// REMOVIDO: onTermosImported da prop
-function CombinedData({ filters, isSidebarOpen }, ref) {
-  const [fullData, setFullData] = useState([]);
-  const [filteredLocalData, setFilteredLocalData] = useState([]);
+function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
+  const [fullData, setFullData] = useState([]); // Dados brutos carregados do backend
+  const [filteredLocalData, setFilteredLocalData] = useState([]); // Dados filtrados localmente
   const [cardsLoading, setCardsLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -74,20 +73,28 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
       const response = await axios.get(
         `${BACKEND_URL}/api/awbs-by-destination`
       );
-      setAwbsByDestination(response.data);
+      // Garanta que awbsByDestination sempre comece como um array vazio se a resposta for inválida
+      setAwbsByDestination(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       console.error("Erro ao buscar AWBs por destino:", err);
       showAppToast("Erro", "Falha ao carregar AWBs por destino.", "danger");
+      setAwbsByDestination([]); // Define como array vazio em caso de erro
     }
   }, [BACKEND_URL, showAppToast]);
 
   const fetchMissingDates = useCallback(async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/missing-dates`);
-      setMissingDates(response.data);
+      // Garanta que missingDates sempre comece como um objeto vazio se a resposta for inválida
+      setMissingDates(
+        typeof response.data === "object" && response.data !== null
+          ? response.data
+          : {}
+      );
     } catch (err) {
       console.error("Erro ao buscar datas faltantes:", err);
       showAppToast("Erro", "Falha ao carregar datas faltantes.", "danger");
+      setMissingDates({}); // Define como objeto vazio em caso de erro
     }
   }, [BACKEND_URL, showAppToast]);
 
@@ -115,7 +122,8 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
       const response = await axios.get(
         `${BACKEND_URL}/api/combined-data-specific?${queryParams.toString()}`
       );
-      setFullData(response.data);
+      // GARANTIR QUE fullData seja sempre um array
+      setFullData(Array.isArray(response.data) ? response.data : []);
       setCurrentPage(1);
     } catch (err) {
       setError(
@@ -130,28 +138,27 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
         }`,
         "danger"
       );
+      setFullData([]); // Definir como array vazio em caso de erro
     } finally {
       setTableLoading(false);
     }
   }, [filters, BACKEND_URL, showAppToast]);
 
-  // Lógica para lidar com o processamento de importação
   const handleProcessingChange = useCallback(
     (processing, type, extractedData) => {
       setIsProcessing(processing);
       if (!processing) {
-        fetchData(); // Recarrega a tabela com os filtros atuais
-        fetchAwbsByDestination(); // Recarrega dados dos cards
-        fetchMissingDates(); // Recarrega dados dos cards
+        fetchData();
+        fetchAwbsByDestination();
+        fetchMissingDates();
 
-        // REMOVIDO: Lógica para acionar o modal de termos extraídos
-        // if (type === 'termos' && extractedData) {
+        // if (type === 'termos' && extractedData) { // Lógica para o modal removido
         //     onTermosImported('extractedTerms', extractedData);
         // }
       }
     },
     [fetchData, fetchAwbsByDestination, fetchMissingDates]
-  ); // REMOVIDO: onTermosImported das dependências
+  );
 
   useEffect(() => {
     fetchData();
@@ -165,19 +172,25 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
   }, [fetchAwbsByDestination, fetchMissingDates]);
 
   useEffect(() => {
+    // Garantir que fullData é um array antes de filtrar
+    const dataToFilter = Array.isArray(fullData) ? fullData : [];
+
     if (!generalFilter.trim()) {
-      setFilteredLocalData(fullData);
+      setFilteredLocalData(dataToFilter);
     } else {
       const lowerCaseFilter = generalFilter.toLowerCase();
-      const filtered = fullData.filter((row) =>
-        Object.values(row).some((value) =>
-          String(value).toLowerCase().includes(lowerCaseFilter)
-        )
+      const filtered = dataToFilter.filter(
+        (
+          row // Usar dataToFilter
+        ) =>
+          Object.values(row).some((value) =>
+            String(value).toLowerCase().includes(lowerCaseFilter)
+          )
       );
       setFilteredLocalData(filtered);
       setCurrentPage(1);
     }
-  }, [generalFilter, fullData]);
+  }, [generalFilter, fullData]); // Depende de fullData
 
   const copyToClipboard = useCallback(
     async (text, type) => {
@@ -214,34 +227,45 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
 
   const formatNumber = (num) => new Intl.NumberFormat("pt-BR").format(num);
 
-  const totalAwbsCalculated = Array.isArray(awbsByDestination) // Adicionada verificação
+  // Garantir que awbsByDestination é um array antes de reduce
+  const totalAwbsCalculated = Array.isArray(awbsByDestination)
     ? awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0)
-    : 0; // Se não for um array, o total é 0 para evitar o erro
+    : 0;
+
+  // Paginação agora baseada em filteredLocalData
+  // Garantir que filteredLocalData é um array antes de slice
+  const dataForPagination = Array.isArray(filteredLocalData)
+    ? filteredLocalData
+    : [];
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredLocalData.slice(
+  const currentItems = dataForPagination.slice(
     indexOfFirstItem,
     indexOfLastItem
   );
-  const totalPages = Math.ceil(filteredLocalData.length / itemsPerPage);
+  const totalPages = Math.ceil(dataForPagination.length / itemsPerPage);
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   const renderPaginationButtons = () => {
     const pageNumbers = [];
-    for (let i = 1; i <= totalPages; i++) {
-      pageNumbers.push(
-        <li
-          key={i}
-          className={`page-item ${currentPage === i ? "active" : ""}`}
-        >
-          <button onClick={() => paginate(i)} className="page-link">
-            {i}
-          </button>
-        </li>
-      );
+    // Gerar botões de paginação apenas se houver mais de uma página
+    if (totalPages > 1) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(
+          <li
+            key={i}
+            className={`page-item ${currentPage === i ? "active" : ""}`}
+          >
+            <button onClick={() => paginate(i)} className="page-link">
+              {i}
+            </button>
+          </li>
+        );
+      }
     }
-    return (
+
+    return totalPages > 1 ? ( // Renderizar botões apenas se houver mais de uma página
       <ul className="pagination justify-content-center mt-4">
         <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
           <button
@@ -265,7 +289,7 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
           </button>
         </li>
       </ul>
-    );
+    ) : null; // Não renderiza nada se houver apenas uma página
   };
 
   const importActionsInternalRef = useRef(null);
@@ -276,12 +300,13 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
   }));
 
   const exportToExcel = () => {
-    if (!filteredLocalData || filteredLocalData.length === 0) {
+    // Usar dataForPagination (que é filteredLocalData) para a exportação
+    if (!dataForPagination || dataForPagination.length === 0) {
       showAppToast("Aviso", "Não há dados para exportar.", "warning");
       return;
     }
 
-    const dataForExport = filteredLocalData.map((row) => ({
+    const dataForExport = dataForPagination.map((row) => ({
       Termo: row.numero_termo || "N/A",
       "Dt Termo": row.data_registro || "N/A",
       AWB: row.awb || "N/A",
@@ -427,14 +452,14 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
               >
                 <ul className="list-group list-group-flush">
                   {/* Adicionar verificação Array.isArray() aqui também para safety */}
-                  {Array.isArray(missingDates) &&
+                  {typeof missingDates === "object" &&
+                  missingDates !== null &&
                   Object.keys(missingDates).length === 0 ? (
                     <li className="list-group-item">
                       Verificando datas faltantes...
                     </li>
                   ) : (
                     // Object.entries já retorna um array, mas a verificação no missingDates garante que ele seja um objeto
-                    // antes de chamar Object.keys. Melhorar aqui também.
                     Object.entries(missingDates || {}).map(
                       (
                         [destino, dates],
@@ -458,13 +483,11 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
           <div className="col-md-4">
             <div className="card h-100">
               <div className="card-header">
-                <h5 className="mb-0">
-                  Acompanhamento de Voos (Próxima Funcionalidade)
-                </h5>
+                <h5 className="mb-0">Malha de Voos (Próxima Funcionalidade)</h5>
               </div>
               <div className="card-body d-flex flex-column justify-content-center align-items-center">
                 <p className="text-muted text-center">
-                  Conteúdo da dos voos será exibido aqui.
+                  Conteúdo da malha de voos será exibido aqui.
                 </p>
                 <p className="text-muted text-center small">
                   (Funcionalidade em desenvolvimento)
@@ -482,9 +505,13 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
         </div>
       )}
 
+      <h2 className="text-center mb-4">
+        Resultado dos Termos da SEFAZ Importados
+      </h2>
+
       <div className="card mb-4">
         <div className="card-header text-center">
-          <h5 className="mb-0">Filtro dos resultados da tabela</h5>
+          <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>
         </div>
         <div className="card-body">
           <div className="d-flex flex-wrap align-items-center justify-content-center gap-3">
@@ -522,7 +549,7 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
             </span>
           </div>
         </div>
-      ) : filteredLocalData.length === 0 ? (
+      ) : Array.isArray(filteredLocalData) && filteredLocalData.length === 0 ? ( // Usar filteredLocalData
         <div className="alert alert-info text-center" role="alert">
           Nenhum dado encontrado para os critérios de filtro.
         </div>
@@ -546,58 +573,62 @@ function CombinedData({ filters, isSidebarOpen }, ref) {
                 </tr>
               </thead>
               <tbody>
-                {currentItems.map((row, index) => (
-                  <tr key={index}>
-                    <td>{row.numero_termo || "N/A"}</td>
-                    <td>{row.data_registro || "N/A"}</td>
-                    <td
-                      onClick={() => copyAwbLast8Digits(row.awb)}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <b>{row.awb || "N/A"}</b>
-                    </td>
-                    <td>{row.franchise_data_emissao || "N/A"}</td>
-                    <td>{row.origem || "N/A"}</td>
-                    <td>
-                      <b>{row.destino || "N/A"}</b>
-                    </td>
-                    <td className="text-start">{row.tomador || "N/A"}</td>
-                    <td className="text-start">{row.destinatario || "N/A"}</td>
-                    <td>{row.numero_voo || "N/A"}</td>
-                    <td>
-                      {row.chave_nfe ? (
-                        <TooltipWrapper title={row.chave_nfe}>
-                          <FontAwesomeIcon
-                            icon={faCopy}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyToClipboard(row.chave_nfe, "Chave NFe");
-                            }}
-                            style={{ cursor: "pointer", color: "#007bff" }}
-                          />
-                        </TooltipWrapper>
-                      ) : (
-                        "N/A"
-                      )}
-                    </td>
-                    <td>
-                      {row.chave_mdfe ? (
-                        <TooltipWrapper title={row.chave_mdfe}>
-                          <FontAwesomeIcon
-                            icon={faCopy}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyToClipboard(row.chave_mdfe, "Chave MDFe");
-                            }}
-                            style={{ cursor: "pointer", color: "#007bff" }}
-                          />
-                        </TooltipWrapper>
-                      ) : (
-                        "N/A"
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {/* Garantir que currentItems é um array antes de mapear */}
+                {Array.isArray(currentItems) &&
+                  currentItems.map((row, index) => (
+                    <tr key={index}>
+                      <td>{row.numero_termo || "N/A"}</td>
+                      <td>{row.data_registro || "N/A"}</td>
+                      <td
+                        onClick={() => copyAwbLast8Digits(row.awb)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <b>{row.awb || "N/A"}</b>
+                      </td>
+                      <td>{row.franchise_data_emissao || "N/A"}</td>
+                      <td>{row.origem || "N/A"}</td>
+                      <td>
+                        <b>{row.destino || "N/A"}</b>
+                      </td>
+                      <td className="text-start">{row.tomador || "N/A"}</td>
+                      <td className="text-start">
+                        {row.destinatario || "N/A"}
+                      </td>
+                      <td>{row.numero_voo || "N/A"}</td>
+                      <td>
+                        {row.chave_nfe ? (
+                          <TooltipWrapper title={row.chave_nfe}>
+                            <FontAwesomeIcon
+                              icon={faCopy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(row.chave_nfe, "Chave NFe");
+                              }}
+                              style={{ cursor: "pointer", color: "#007bff" }}
+                            />
+                          </TooltipWrapper>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                      <td>
+                        {row.chave_mdfe ? (
+                          <TooltipWrapper title={row.chave_mdfe}>
+                            <FontAwesomeIcon
+                              icon={faCopy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(row.chave_mdfe, "Chave MDFe");
+                              }}
+                              style={{ cursor: "pointer", color: "#007bff" }}
+                            />
+                          </TooltipWrapper>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

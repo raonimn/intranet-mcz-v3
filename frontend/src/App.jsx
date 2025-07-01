@@ -3,7 +3,7 @@ import React, { useState, useRef, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import CombinedData from "./components/CombinedData";
-// REMOVIDO: import ExtractedTermDataModal from './components/ExtractedTermDataModal';
+// REMOVIDO: import ExtractedTermDataModal from './components/ExtractedTermDataModal'; // Já estava comentado, certifique-se de que a linha não existe
 
 // MUI Imports (mantidos)
 import Drawer from "@mui/material/Drawer";
@@ -52,9 +52,8 @@ function App() {
 
   const combinedDataRef = useRef(null);
 
-  // REMOVIDO: showExtractedDataModal e extractedTermData
-  // const [showExtractedDataModal, setShowExtractedDataModal] = useState(false);
-  // const [extractedTermData, setExtractedTermData] = useState([]);
+  // REMOVIDO TOTALMENTE: showExtractedDataModal e extractedTermData (estes não devem mais existir)
+  // Certifique-se de que não há nenhuma declaração de estado para eles.
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -76,28 +75,22 @@ function App() {
     [filterAwb, filterTermo, filterDestino, filterVoo, filterDataTermo]
   );
 
+  // handleImportAction AGORA NÃO TEM PARÂMETRO 'data' E NÃO FAZ NADA COM MODAL DE TERMOS EXTRAÍDOS
   const handleImportAction = useCallback((type) => {
-    // REMOVIDO: `data` do parâmetro
+    // Removido 'data' do parâmetro
     if (combinedDataRef.current) {
       if (type === "franchise") {
         combinedDataRef.current.showFranchiseModal();
       } else if (type === "termos") {
         combinedDataRef.current.showTermosModal();
       }
-      // REMOVIDO: Lógica para acionar o modal de termos extraídos
-      // else if (type === 'extractedTerms' && data) {
-      //     setExtractedTermData(data);
-      //     setShowExtractedDataModal(true);
-      // }
+      // REMOVIDA TOTALMENTE: a lógica `else if (type === 'extractedTerms' && data)`
+      // e qualquer chamada a `setExtractedTermData` ou `setShowExtractedDataModal`
     }
     setIsSidebarOpen(false);
-  }, []);
+  }, []); // Dependências ajustadas
 
-  // REMOVIDO: handleCloseExtractedDataModal
-  // const handleCloseExtractedDataModal = () => {
-  //     setShowExtractedDataModal(false);
-  //     setExtractedTermData([]);
-  // };
+  // REMOVIDO TOTALMENTE: handleCloseExtractedDataModal (não deve mais existir)
 
   return (
     <Router>
@@ -161,7 +154,6 @@ function App() {
                 </Dropdown.Toggle>
 
                 <Dropdown.Menu data-bs-theme="dark">
-                  {" "}
                   {/* CORRIGIDO: de 'dark' para 'data-bs-theme="dark"' */}
                   <Dropdown.Item
                     onClick={() => handleImportAction("franchise")}
@@ -305,7 +297,7 @@ function App() {
               <CombinedData
                 filters={activeFilters}
                 isSidebarOpen={isSidebarOpen}
-                // REMOVIDO: onTermosImported
+                onTermosImported={handleImportAction} // <-- REATIVADO AQUI!
                 ref={combinedDataRef}
               />
             }
@@ -316,7 +308,7 @@ function App() {
               <CombinedData
                 filters={activeFilters}
                 isSidebarOpen={isSidebarOpen}
-                // REMOVIDO: onTermosImported
+                onTermosImported={handleImportAction} // <-- REATIVADO AQUI!
                 ref={combinedDataRef}
               />
             }
@@ -324,12 +316,7 @@ function App() {
         </Routes>
       </div>
 
-      {/* REMOVIDO: Modal para exibir dados de termos importados */}
-      {/* <ExtractedTermDataModal
-                show={showExtractedDataModal}
-                handleClose={handleCloseExtractedDataModal}
-                data={extractedTermData}
-            /> */}
+      {/* REMOVIDO: ExtractedTermDataModal - Confirmar que esta parte não existe no seu arquivo */}
     </Router>
   );
 }

@@ -16,8 +16,10 @@ const {
     getSefazReportData,
     getFranchiseReportData,
     insertLog,
-    getLastFranchiseImportDate // --- IMPORTAR A FUNÇÃO ---
+    getLastFranchiseImportDate,
+    waitForDatabaseTables // --- IMPORTAR A NOVA FUNÇÃO ---
 } = require('./database');
+
 
 
 const { processPdfAndSaveData } = require('./services/pdfProcessor');
@@ -76,9 +78,17 @@ const formatDateToDDMMYYYY = (date) => {
 // Isso garante que o servidor Express só configure suas rotas e comece a escutar
 // APÓS o banco de dados ter sido inicializado e o pool estar pronto.
 initializeDatabase()
-    .then(() => {
-        // Log de sucesso após a inicialização do DB
+    .then(async () => { // Adicionar 'async' aqui para usar 'await'
         if (LOG_DEBUG) console.log('[SERVER-INIT] Banco de dados MySQL inicializado com sucesso.');
+
+        // --- AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS ---
+        const tablesToWaitFor = ['sefaz_report', 'franchise_report', 'logs']; // As tabelas que o app usa
+        const tablesReady = await waitForDatabaseTables(tablesToWaitFor);
+
+        if (!tablesReady) {
+            console.error('[SERVER-INIT] Falha crítica: As tabelas do banco de dados não ficaram prontas a tempo. Encerrando servidor.');
+            process.exit(1); // Encerrar se as tabelas não estiverem prontas
+        }
 
         // Agora, TODAS as definições de rota e o app.listen() vêm AQUI DENTRO.
         app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
@@ -225,7 +235,7 @@ initializeDatabase()
                     if (!formattedAwb.startsWith('577')) {
                         formattedAwb = `577${formattedAwb}`;
                     }
-                    finalHavingClauses.push(`calculated_awb LIKE ?`);
+                    finalHavingClauses.push(`awb LIKE ?`);
                     finalHavingParams.push(`%${formattedAwb}%`);
                 }
                 if (destino && destino.trim() !== '') {
@@ -233,57 +243,63 @@ initializeDatabase()
                     finalHavingParams.push(`%${destino.toUpperCase().trim()}%`);
                 }
 
-
                 const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
                 const havingString = finalHavingClauses.length > 0 ? `HAVING ${finalHavingClauses.join(' AND ')}` : '';
 
                 const query = `
+                    WITH SefazDataWithCalculatedAwb AS (
+                        SELECT
+                            sr.id,
+                            sr.data_emissao,
+                            sr.chave_mdfe,
+                            sr.numero_termo,
+                            sr.chave_nfe,
+                            sr.numero_cte,
+                            sr.numero_nfe,
+                            sr.numero_voo,
+                            sr.data_registro,
+                            -- Calcula o AWB aqui na CTE, com correlação direta sem numero_voo no FR
+                            COALESCE(
+                                -- Prioridade 1: sr.numero_cte exato com fr1.awb
+                                (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
+                                -- Prioridade 2: sr.numero_nfe com fr2.notas (tratado)
+                                (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
+                                -- Prioridade 3: sr.numero_cte parcial (LIKE %numero_cte%) na chave_cte
+                                (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
+                            ) AS awb
+                        FROM sefaz_report sr
+                        ${whereString}
+                    )
                     SELECT
-                        sr.id,
-                        sr.data_emissao,
-                        sr.chave_mdfe,
-                        sr.numero_termo,
-                        sr.chave_nfe,
-                        sr.numero_cte,
-                        sr.numero_nfe,
-                        sr.numero_voo,
-                        sr.data_registro,
-                        -- Calcula o AWB final usando COALESCE com a ordem de prioridade CORRETA
-                        COALESCE(
-                            -- Prioridade 1: sr.numero_cte = SUBSTR(fr1.chave_cte, 26, 9)
-                            (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
-                            -- Prioridade 2: sr.numero_nfe com fr2.notas (tratado)
-                            (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
-                            -- Prioridade 3: sr.numero_cte parcial (LIKE %numero_cte%) na chave_cte
-                            (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
-                        ) AS awb,
-                        fr_match.chave_cte AS fr_chave_cte,
-                        fr_match.origem AS fr_origem,
-                        fr_match.destino AS fr_destino,
-                        fr_match.tomador AS fr_tomador,
-                        fr_match.notas AS fr_notas,
-                        fr_match.data_emissao AS fr_data_emissao,
-                        fr_match.destinatario AS fr_destinatario
-                    FROM sefaz_report sr
-                    LEFT JOIN franchise_report fr_match
-                        ON fr_match.awb = COALESCE(
-                            -- PRIORIDADE 1: Match de CTE completo (igual ao primeiro COALESCE)
-                            (SELECT fr_sub1.awb FROM franchise_report fr_sub1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr_sub1.chave_cte, 26, 9) LIMIT 1),
-                            -- PRIORIDADE 2: Match de NFe vs Notas (igual ao segundo COALESCE)
-                            (SELECT fr_sub2.awb FROM franchise_report fr_sub2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr_sub2.notas IS NOT NULL AND fr_sub2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr_sub2.notas, '0', ' ')) LIMIT 1),
-                            -- PRIORIDADE 3: Match de CTE parcial (igual ao terceiro COALESCE)
-                            (SELECT fr_parcial_sub.awb FROM franchise_report fr_parcial_sub WHERE fr_parcial_sub.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
-                        )
-                    ${whereString}
+                        sd.id,
+                        sd.data_emissao,
+                        sd.chave_mdfe,
+                        sd.numero_termo,
+                        sd.chave_nfe,
+                        sd.numero_cte,
+                        sd.numero_nfe,
+                        sd.numero_voo,
+                        sd.data_registro,
+                        sd.awb, -- Alias final para o frontend (já é 'awb' da CTE)
+                        fr.chave_cte AS fr_chave_cte,
+                        fr.origem AS fr_origem,
+                        fr.destino AS fr_destino,
+                        fr.tomador AS fr_tomador,
+                        fr.notas AS fr_notas,
+                        fr.data_emissao AS fr_data_emissao,
+                        fr.destinatario AS fr_destinatario
+                    FROM SefazDataWithCalculatedAwb sd
+                    LEFT JOIN franchise_report fr
+                        ON sd.awb = fr.awb -- JOIN simples e eficiente após cálculo do AWB
                     ${havingString}
-                    ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
+                    ORDER BY sd.data_emissao DESC, sd.numero_termo ASC;
                 `;
 
                 const finalParams = params.concat(finalHavingParams);
 
                 if (LOG_DEBUG) {
-                    console.log('[DEBUG-SERVER] Query Combined Data (Final Priority Logic):', query);
-                    console.log('[DEBUG-SERVER] Query Params Combined Data (Final Priority Logic):', finalParams);
+                    console.log('[DEBUG-SERVER] Query Combined Data (Multi-Level Fallback):', query);
+                    console.log('[DEBUG-SERVER] Query Params Combined Data (Multi-Level Fallback):', finalParams);
                 }
 
                 const [rows] = await connection.execute(query, finalParams);
@@ -297,8 +313,6 @@ initializeDatabase()
                 }
             }
         });
-
-
 
         app.get('/api/awbs-by-destination', async (req, res) => {
             let connection;
@@ -373,19 +387,7 @@ initializeDatabase()
             }
             next();
         }
-
-        app.post('/api/log', async (req, res) => {
-            const { action, user_ip, mac_address, user_agent, details, success } = req.body;
-            try {
-                await insertLog({ action, user_ip, mac_address, user_agent, details, success });
-                res.status(200).json({ success: true, message: 'Log registrado com sucesso.' });
-            } catch (error) {
-                console.error(`[ERROR-SERVER] Erro ao processar requisição de log: ${error.message}`);
-                res.status(500).json({ success: false, message: 'Erro ao registrar log.' });
-            }
-        });
-
-
+        // --- NOVA ROTA PARA BUSCAR ÚLTIMA DATA DE IMPORTAÇÃO DE FRANCHISE ---
         app.get('/api/last-franchise-import-date', async (req, res) => {
             try {
                 const lastDate = await getLastFranchiseImportDate();
@@ -406,7 +408,6 @@ initializeDatabase()
             }
         });
 
-
         app.listen(port, '0.0.0.0', () => {
             console.log(`Backend rodando em http://0.0.0.0:${port}`);
             if (LOG_DEBUG) {
@@ -418,3 +419,11 @@ initializeDatabase()
         console.error('[SERVER-INIT] Falha crítica ao iniciar o servidor devido a erro no DB:', err);
         process.exit(1);
     });
+
+
+
+
+
+
+
+

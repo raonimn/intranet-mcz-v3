@@ -1,5 +1,7 @@
 // backend/database.js
 
+// backend/database.js
+
 const mysql = require('mysql2/promise');
 
 const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
@@ -71,11 +73,11 @@ async function initializeDatabase() {
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 action VARCHAR(255) NOT NULL,
-                user_ip VARCHAR(45), -- IPv4 ou IPv6
-                mac_address VARCHAR(17), -- MAC Address format XX:XX:XX:XX:XX:XX
-                user_agent TEXT, -- Navegador, SO do cliente
-                details TEXT, -- Detalhes adicionais da ação
-                success BOOLEAN DEFAULT TRUE -- Indica se a ação foi bem-sucedida
+                user_ip VARCHAR(45),
+                mac_address VARCHAR(17),
+                user_agent TEXT,
+                details TEXT,
+                success BOOLEAN DEFAULT TRUE
             );
         `);
     debugLog('Tabela logs verificada/criada.');
@@ -92,6 +94,50 @@ async function initializeDatabase() {
     }
     debugLog('--- Fim de initializeDatabase ---');
   }
+}
+
+
+// --- NOVA FUNÇÃO PARA VERIFICAR A EXISTÊNCIA DE TABELAS ---
+async function checkTableExistence(tableName) {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        // CORREÇÃO AQUI: Construir a string SQL para SHOW TABLES LIKE
+        const [rows] = await connection.execute(`SHOW TABLES LIKE '${tableName}'`); // Use aspas simples e concatene
+        return rows.length > 0;
+    } catch (error) {
+        debugError(`Erro ao verificar existência da tabela ${tableName}: ${error.message}`);
+        return false;
+    } finally {
+        if (connection) {
+            connection.release();
+        }
+    }
+}
+
+// --- NOVA FUNÇÃO PARA ESPERAR ATÉ QUE AS TABELAS ESTEJAM PRONTAS ---
+async function waitForDatabaseTables(tableNames, maxRetries = 10, retryInterval = 2000) { // 10 retries * 2 segundos = 20 segundos
+  debugLog('--- Início de waitForDatabaseTables ---');
+  for (let i = 0; i < maxRetries; i++) {
+    let allTablesExist = true;
+    for (const tableName of tableNames) {
+      const exists = await checkTableExistence(tableName);
+      if (!exists) {
+        allTablesExist = false;
+        break;
+      }
+    }
+
+    if (allTablesExist) {
+      debugLog('Todas as tabelas necessárias foram detectadas no banco de dados.');
+      return true;
+    } else {
+      debugWarn(`Aguardando tabelas do banco de dados... Tentativa ${i + 1}/${maxRetries}`);
+      await new Promise(resolve => setTimeout(resolve, retryInterval));
+    }
+  }
+  debugError('Tempo esgotado! Nem todas as tabelas foram detectadas no banco de dados.');
+  return false;
 }
 
 // --- NOVA FUNÇÃO PARA INSERIR LOGS ---
@@ -462,12 +508,13 @@ async function getLastFranchiseImportDate() {
 
 
 module.exports = {
-  initializeDatabase,
-  pool,
-  insertSefazReportData,
-  insertFranchiseReportData,
-  getSefazReportData,
-  getFranchiseReportData,
-  insertLog,
-  getLastFranchiseImportDate // --- EXPORTAR A NOVA FUNÇÃO ---
+    initializeDatabase,
+    pool,
+    insertSefazReportData,
+    insertFranchiseReportData,
+    getSefazReportData,
+    getFranchiseReportData,
+    insertLog,
+    getLastFranchiseImportDate,
+    waitForDatabaseTables // --- EXPORTAR A NOVA FUNÇÃO ---
 };

@@ -17,9 +17,8 @@ const {
     getFranchiseReportData,
     insertLog,
     getLastFranchiseImportDate,
-    waitForDatabaseTables // --- IMPORTAR A NOVA FUNÇÃO ---
+    waitForDatabaseTables // <-- ADICIONE ESTA LINHA AQUI
 } = require('./database');
-
 
 
 const { processPdfAndSaveData } = require('./services/pdfProcessor');
@@ -74,20 +73,17 @@ const formatDateToDDMMYYYY = (date) => {
     return `${d}/${m}/${y}`;
 };
 
-// --- ALTERAÇÃO PRINCIPAL AQUI: Envolver TUDO dentro do .then() de initializeDatabase ---
-// Isso garante que o servidor Express só configure suas rotas e comece a escutar
-// APÓS o banco de dados ter sido inicializado e o pool estar pronto.
 initializeDatabase()
-    .then(async () => { // Adicionar 'async' aqui para usar 'await'
+    .then(async () => {
         if (LOG_DEBUG) console.log('[SERVER-INIT] Banco de dados MySQL inicializado com sucesso.');
 
         // --- AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS ---
-        const tablesToWaitFor = ['sefaz_report', 'franchise_report', 'logs']; // As tabelas que o app usa
-        const tablesReady = await waitForDatabaseTables(tablesToWaitFor);
+        const tablesToWaitFor = ['sefaz_report', 'franchise_report', 'logs'];
+        const tablesReady = await waitForDatabaseTables(tablesToWaitFor); // Agora waitForDatabaseTables estará definido
 
         if (!tablesReady) {
             console.error('[SERVER-INIT] Falha crítica: As tabelas do banco de dados não ficaram prontas a tempo. Encerrando servidor.');
-            process.exit(1); // Encerrar se as tabelas não estiverem prontas
+            process.exit(1);
         }
 
         // Agora, TODAS as definições de rota e o app.listen() vêm AQUI DENTRO.
@@ -258,13 +254,9 @@ initializeDatabase()
                             sr.numero_nfe,
                             sr.numero_voo,
                             sr.data_registro,
-                            -- Calcula o AWB aqui na CTE, com correlação direta sem numero_voo no FR
                             COALESCE(
-                                -- Prioridade 1: sr.numero_cte exato com fr1.awb
                                 (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
-                                -- Prioridade 2: sr.numero_nfe com fr2.notas (tratado)
                                 (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
-                                -- Prioridade 3: sr.numero_cte parcial (LIKE %numero_cte%) na chave_cte
                                 (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
                             ) AS awb
                         FROM sefaz_report sr
@@ -280,7 +272,7 @@ initializeDatabase()
                         sd.numero_nfe,
                         sd.numero_voo,
                         sd.data_registro,
-                        sd.awb, -- Alias final para o frontend (já é 'awb' da CTE)
+                        sd.awb,
                         fr.chave_cte AS fr_chave_cte,
                         fr.origem AS fr_origem,
                         fr.destino AS fr_destino,
@@ -290,7 +282,7 @@ initializeDatabase()
                         fr.destinatario AS fr_destinatario
                     FROM SefazDataWithCalculatedAwb sd
                     LEFT JOIN franchise_report fr
-                        ON sd.awb = fr.awb -- JOIN simples e eficiente após cálculo do AWB
+                        ON sd.awb = fr.awb
                     ${havingString}
                     ORDER BY sd.data_emissao DESC, sd.numero_termo ASC;
                 `;
@@ -387,16 +379,27 @@ initializeDatabase()
             }
             next();
         }
+        // --- NOVA ROTA PARA RECEBER LOGS DO FRONTEND ---
+        app.post('/api/log', async (req, res) => {
+            const { action, user_ip, mac_address, user_agent, details, success } = req.body;
+            try {
+                await insertLog({ action, user_ip, mac_address, user_agent, details, success });
+                res.status(200).json({ success: true, message: 'Log registrado com sucesso.' });
+            } catch (error) {
+                console.error(`[ERROR-SERVER] Erro ao processar requisição de log: ${error.message}`);
+                res.status(500).json({ success: false, message: 'Erro ao registrar log.' });
+            }
+        });
+
         // --- NOVA ROTA PARA BUSCAR ÚLTIMA DATA DE IMPORTAÇÃO DE FRANCHISE ---
         app.get('/api/last-franchise-import-date', async (req, res) => {
             try {
                 const lastDate = await getLastFranchiseImportDate();
                 if (lastDate) {
-                    // Formatar a data para o frontend (DD/MM/YYYY HH:MM)
                     const formattedDate = new Date(lastDate).toLocaleString('pt-BR', {
                         day: '2-digit', month: '2-digit', year: 'numeric',
                         hour: '2-digit', minute: '2-digit', second: '2-digit',
-                        hour12: false // Formato 24h
+                        hour12: false
                     });
                     res.status(200).json({ last_update: formattedDate });
                 } else {
@@ -419,11 +422,3 @@ initializeDatabase()
         console.error('[SERVER-INIT] Falha crítica ao iniciar o servidor devido a erro no DB:', err);
         process.exit(1);
     });
-
-
-
-
-
-
-
-

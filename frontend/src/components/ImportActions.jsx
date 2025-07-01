@@ -27,6 +27,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
     const [termosFile, setTermosFile] = useState(null);
     const termosFileInputRef = useRef(null);
     const [numeroVooInput, setNumeroVooInput] = useState('');
+    // REMOVIDO: const [dataRegistro, setDataRegistro] = useState(new Date()); // Data de registro não é mais fornecida pelo usuário
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -73,6 +74,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
         setShowTermosModal(false);
         setTermosFile(null);
         setNumeroVooInput('');
+        // REMOVIDO: setDataRegistro(new Date());
         if (termosFileInputRef.current) termosFileInputRef.current.value = '';
     };
 
@@ -82,6 +84,9 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
         const value = e.target.value.replace(/\D/g, '');
         setNumeroVooInput(value.slice(0, 4));
     };
+
+    // REMOVIDO: handleDataRegistroChange
+    // const handleDataRegistroChange = (date) => setDataRegistro(date);
 
     const handleTermosUpload = async (e) => {
         e.preventDefault();
@@ -93,6 +98,11 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
             showToast('Erro', 'Por favor, informe os 4 dígitos do número do Voo.', 'danger');
             return;
         }
+        // REMOVIDO: Validação da data de registro
+        // if (!dataRegistro) {
+        //     showToast('Erro', 'Por favor, informe a Data do Relatório.', 'danger');
+        //     return;
+        // }
 
         onProcessingChange(true, 'termos');
         handleCloseTermosModal();
@@ -102,6 +112,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
         const formData = new FormData();
         formData.append('pdf_file', termosFile);
         formData.append('numeroVoo', fullNumeroVoo);
+        // REMOVIDO: formData.append('dataRegistro', formatDateToDDMMYYYY(dataRegistro)); // Não envia mais esta data
 
         try {
             const response = await axios.post(`${BACKEND_URL}/api/upload-pdf`, formData, {
@@ -166,9 +177,11 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
                             <Col md={6}>
                                 <Form.Group>
                                     <Form.Label>Data do Relatório:</Form.Label>
+                                    {/* Este campo agora é apenas informativo para o usuário,
+                                        a data real de registro no DB será NOW() */}
                                     <MuiDatePicker
-                                        readOnly
-                                        value={new Date()}
+                                        readOnly // Torna o campo somente leitura
+                                        value={new Date()} // Exibe a data atual
                                         format="dd/MM/yyyy"
                                         slotProps={{ textField: { fullWidth: true, size: 'small', sx: { '.MuiOutlinedInput-notchedOutline': { borderColor: '#555' } } } }}
                                         sx={{

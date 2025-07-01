@@ -1,4 +1,7 @@
+// TODO: Se, ao importar o termo, a data da última importação do franchise for maior do que 30 minutos, informar via TOAST que há chance de o AWB não ser encontrado.
+
 // frontend/src/components/CombinedData.jsx
+
 import React, {
   useEffect,
   useState,
@@ -14,17 +17,7 @@ import Toast from "react-bootstrap/Toast";
 import ToastContainer from "react-bootstrap/ToastContainer";
 import ImportActions from "./ImportActions";
 import * as XLSX from "xlsx";
-
-// Função auxiliar para máscara de data (mantida)
-const applyDateMask = (value) => {
-  value = value.replace(/\D/g, "");
-  if (value.length > 4) {
-    value = value.replace(/^(\d{2})(\d{2})(\d{4}).*/, "$1/$2/$3");
-  } else if (value.length > 2) {
-    value = value.replace(/^(\d{2})(\d{2}).*/, "$1/$2");
-  }
-  return value;
-};
+import logActivity from "../utils/logService"; // --- IMPORTAR O SERVIÇO DE LOG ---
 
 // TooltipWrapper (mantido)
 const TooltipWrapper = ({ children, title }) => {
@@ -41,14 +34,15 @@ const TooltipWrapper = ({ children, title }) => {
 };
 
 function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
-  const [fullData, setFullData] = useState([]); // Dados brutos carregados do backend
-  const [filteredLocalData, setFilteredLocalData] = useState([]); // Dados filtrados localmente
+  const [fullData, setFullData] = useState([]);
+  const [filteredLocalData, setFilteredLocalData] = useState([]);
   const [cardsLoading, setCardsLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const [awbsByDestination, setAwbsByDestination] = useState([]);
   const [missingDates, setMissingDates] = useState({});
+  const [lastFranchiseUpdate, setLastFranchiseUpdate] = useState("N/A"); // NOVO ESTADO
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [toast, setToast] = useState({
@@ -73,19 +67,17 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       const response = await axios.get(
         `${BACKEND_URL}/api/awbs-by-destination`
       );
-      // Garanta que awbsByDestination sempre comece como um array vazio se a resposta for inválida
       setAwbsByDestination(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       console.error("Erro ao buscar AWBs por destino:", err);
       showAppToast("Erro", "Falha ao carregar AWBs por destino.", "danger");
-      setAwbsByDestination([]); // Define como array vazio em caso de erro
+      setAwbsByDestination([]);
     }
   }, [BACKEND_URL, showAppToast]);
 
   const fetchMissingDates = useCallback(async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/missing-dates`);
-      // Garanta que missingDates sempre comece como um objeto vazio se a resposta for inválida
       setMissingDates(
         typeof response.data === "object" && response.data !== null
           ? response.data
@@ -94,9 +86,25 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     } catch (err) {
       console.error("Erro ao buscar datas faltantes:", err);
       showAppToast("Erro", "Falha ao carregar datas faltantes.", "danger");
-      setMissingDates({}); // Define como objeto vazio em caso de erro
+      setMissingDates({});
     }
   }, [BACKEND_URL, showAppToast]);
+
+  // NOVO useEffect para buscar a última data de atualização
+  const fetchLastFranchiseImportDate = useCallback(async () => {
+    try {
+      const response = await axios.get(
+        `${BACKEND_URL}/api/last-franchise-import-date`
+      );
+      setLastFranchiseUpdate(response.data.last_update);
+    } catch (err) {
+      console.error(
+        "Erro ao buscar última data de importação de franchise:",
+        err
+      );
+      setLastFranchiseUpdate("N/A");
+    }
+  }, [BACKEND_URL]);
 
   const fetchData = useCallback(async () => {
     setTableLoading(true);
@@ -107,7 +115,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         queryParams.append("numeroVoo", filters.voo.trim());
       }
       if (filters.dataTermo && filters.dataTermo.trim()) {
-        queryParams.append("dataRegistro", filters.dataTermo.trim());
+        queryParams.append("dataRegistro", filters.dataTermo.trim()); // Param name matches backend filter
       }
       if (filters.awb && filters.awb.trim()) {
         queryParams.append("awb", filters.awb.trim());
@@ -122,7 +130,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       const response = await axios.get(
         `${BACKEND_URL}/api/combined-data-specific?${queryParams.toString()}`
       );
-      // GARANTIR QUE fullData seja sempre um array
       setFullData(Array.isArray(response.data) ? response.data : []);
       setCurrentPage(1);
     } catch (err) {
@@ -130,7 +137,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         "Erro ao buscar os dados: " +
           (err.response?.data?.message || err.message)
       );
-      console.error("Erro ao buscar dados combinados:", err);
+      console.error("Erro ao buscar dados combinados:", error);
       showAppToast(
         "Erro",
         `Falha ao carregar dados combinados: ${
@@ -138,12 +145,13 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         }`,
         "danger"
       );
-      setFullData([]); // Definir como array vazio em caso de erro
+      setFullData([]);
     } finally {
       setTableLoading(false);
     }
   }, [filters, BACKEND_URL, showAppToast]);
 
+  // Modificar handleProcessingChange para recarregar a data da última atualização
   const handleProcessingChange = useCallback(
     (processing, type, extractedData) => {
       setIsProcessing(processing);
@@ -151,46 +159,77 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         fetchData();
         fetchAwbsByDestination();
         fetchMissingDates();
+        fetchLastFranchiseImportDate(); // Recarregar após qualquer importação
 
-        // if (type === 'termos' && extractedData) { // Lógica para o modal removido
-        //     onTermosImported('extractedTerms', extractedData);
-        // }
+        if (type === "termos" && extractedData) {
+          onTermosImported("extractedTerms", extractedData);
+          logActivity(
+            "Importação de Termos Concluída",
+            {
+              voo:
+                extractedData.length > 0 ? extractedData[0].numero_voo : "N/A", // Exemplo de detalhe
+              totalRegistros: extractedData.length,
+            },
+            true
+          );
+        } else if (type === "franchise") {
+          logActivity(
+            "Importação de Franchise Concluída",
+            {
+              message: "Relatório de Franchise importado.",
+            },
+            true
+          );
+        }
+      } else {
+        logActivity(
+          `Início da Importação: ${type === "termos" ? "Termos" : "Franchise"}`,
+          {},
+          true
+        );
       }
     },
-    [fetchData, fetchAwbsByDestination, fetchMissingDates]
+    [
+      fetchData,
+      fetchAwbsByDestination,
+      fetchMissingDates,
+      onTermosImported,
+      fetchLastFranchiseImportDate,
+    ]
   );
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // Modificar useEffect para buscar também a última data de importação de franchise
   useEffect(() => {
     setCardsLoading(true);
-    Promise.all([fetchAwbsByDestination(), fetchMissingDates()]).finally(() => {
+    Promise.all([
+      fetchAwbsByDestination(),
+      fetchMissingDates(),
+      fetchLastFranchiseImportDate(), // Chamar a nova função
+    ]).finally(() => {
       setCardsLoading(false);
     });
-  }, [fetchAwbsByDestination, fetchMissingDates]);
+  }, [fetchAwbsByDestination, fetchMissingDates, fetchLastFranchiseImportDate]); // Adicionar como dependência
 
   useEffect(() => {
-    // Garantir que fullData é um array antes de filtrar
     const dataToFilter = Array.isArray(fullData) ? fullData : [];
 
     if (!generalFilter.trim()) {
       setFilteredLocalData(dataToFilter);
     } else {
       const lowerCaseFilter = generalFilter.toLowerCase();
-      const filtered = dataToFilter.filter(
-        (
-          row // Usar dataToFilter
-        ) =>
-          Object.values(row).some((value) =>
-            String(value).toLowerCase().includes(lowerCaseFilter)
-          )
+      const filtered = dataToFilter.filter((row) =>
+        Object.values(row).some((value) =>
+          String(value).toLowerCase().includes(lowerCaseFilter)
+        )
       );
       setFilteredLocalData(filtered);
       setCurrentPage(1);
     }
-  }, [generalFilter, fullData]); // Depende de fullData
+  }, [generalFilter, fullData]);
 
   const copyToClipboard = useCallback(
     async (text, type) => {
@@ -227,13 +266,10 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
 
   const formatNumber = (num) => new Intl.NumberFormat("pt-BR").format(num);
 
-  // Garantir que awbsByDestination é um array antes de reduce
   const totalAwbsCalculated = Array.isArray(awbsByDestination)
     ? awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0)
     : 0;
 
-  // Paginação agora baseada em filteredLocalData
-  // Garantir que filteredLocalData é um array antes de slice
   const dataForPagination = Array.isArray(filteredLocalData)
     ? filteredLocalData
     : [];
@@ -249,7 +285,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
 
   const renderPaginationButtons = () => {
     const pageNumbers = [];
-    // Gerar botões de paginação apenas se houver mais de uma página
     if (totalPages > 1) {
       for (let i = 1; i <= totalPages; i++) {
         pageNumbers.push(
@@ -265,7 +300,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       }
     }
 
-    return totalPages > 1 ? ( // Renderizar botões apenas se houver mais de uma página
+    return totalPages > 1 ? (
       <ul className="pagination justify-content-center mt-4">
         <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
           <button
@@ -289,7 +324,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           </button>
         </li>
       </ul>
-    ) : null; // Não renderiza nada se houver apenas uma página
+    ) : null;
   };
 
   const importActionsInternalRef = useRef(null);
@@ -300,36 +335,43 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
   }));
 
   const exportToExcel = () => {
-    // Usar dataForPagination (que é filteredLocalData) para a exportação
-    if (!dataForPagination || dataForPagination.length === 0) {
+    const dataForExport = Array.isArray(filteredLocalData)
+      ? filteredLocalData
+      : [];
+    if (dataForExport.length === 0) {
       showAppToast("Aviso", "Não há dados para exportar.", "warning");
+      logActivity("Tentativa de Exportar Excel (Sem Dados)", {}, false); // Log de falha
       return;
     }
 
-    const dataForExport = dataForPagination.map((row) => ({
-      Termo: row.numero_termo || "N/A",
-      "Dt Termo": row.data_registro || "N/A",
-      AWB: row.awb || "N/A",
-      "Emissão FR": row.franchise_data_emissao || "N/A",
-      Origem: row.origem || "N/A",
-      Destino: row.destino || "N/A",
-      Tomador: row.tomador || "N/A",
-      Destinatário: row.destinatario || "N/A",
-      Voo: row.numero_voo || "N/A",
-      "Chave NFe": row.chave_nfe || "N/A",
-      "Chave MDFe": row.chave_mdfe || "N/A",
-      "Nº CT-e": row.numero_cte || "N/A",
-      "Nº NFe": row.numero_nfe || "N/A",
-      "Dt Emissão SEFAZ": row.sefaz_data_emissao || "N/A",
-      "Chave CT-e FR": row.fr_chave_cte || "N/A",
-      "Notas FR": row.notas || "N/A",
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(dataForExport);
+    const ws = XLSX.utils.json_to_sheet(
+      dataForExport.map((row) => ({
+        Termo: row.numero_termo || "N/A",
+        "Dt Emissão": row.data_emissao || "N/A", // Use row.data_emissao para a data do Termo/SEFAZ
+        AWB: row.awb || "N/A",
+        "Emissão FR": row.fr_data_emissao || "N/A", // Use row.fr_data_emissao para a data do Franchise
+        Origem: row.fr_origem || "N/A",
+        Destino: row.fr_destino || "N/A",
+        Tomador: row.fr_tomador || "N/A",
+        Destinatário: row.fr_destinatario || "N/A",
+        Voo: row.numero_voo || "N/A",
+        NFe: row.chave_nfe || "N/A",
+        MDFe: row.chave_mdfe || "N/A",
+        "Nº CT-e": row.numero_cte || "N/A",
+        "Nº NFe do Termo": row.numero_nfe || "N/A",
+        "Chave CT-e FR": row.fr_chave_cte || "N/A",
+        "Notas FR": row.fr_notas || "N/A",
+      }))
+    );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Dados_Termos_AWB");
     XLSX.writeFile(wb, "dados_termos_awb.xlsx");
     showAppToast("Sucesso", "Dados exportados para Excel!", "success");
+    logActivity(
+      "Exportação de Excel Concluída",
+      { totalRegistros: dataForExport.length },
+      true
+    );
   };
 
   return (
@@ -403,7 +445,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           <div className="col-md-4 mb-3 mb-md-0">
             <div className="card h-100">
               <div className="card-header">
-                <h5 className="mb-0">Registros no Banco (AWBs por Destino)</h5>
+                <h5 className="mb-0">AWBs Registrados no banco</h5>
               </div>
               <div
                 className="card-body"
@@ -431,9 +473,10 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                   )}
                 </ul>
               </div>
-              <div className="card-footer text-end">
+              <div className="card-footer text-center">
                 <strong>
-                  Total de AWBs: {formatNumber(totalAwbsCalculated)}
+                  Total de AWBs: {formatNumber(totalAwbsCalculated)} -{" "}
+                  {lastFranchiseUpdate}
                 </strong>
               </div>
             </div>
@@ -552,7 +595,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               <thead className="table-dark">
                 <tr>
                   <th>Termo</th>
-                  {/* Remova espaços ou quebras de linha extras entre as tags <th> */}
                   <th>Dt Emissão</th>
                   <th>AWB</th>
                   <th>Emissão</th>
@@ -566,26 +608,26 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 </tr>
               </thead>
               <tbody>
+                {/* AVISO DE WHITESPACE: Removido espaços entre <td> tags para evitar o aviso do React */}
                 {Array.isArray(currentItems) &&
                   currentItems.map((row, index) => (
                     <tr key={index}>
                       <td>{row.numero_termo || "N/A"}</td>
-                      {/* Remova espaços ou quebras de linha extras entre as tags <td> */}
-                      <td>{row.sefaz_data_emissao || "N/A"}</td>
+                      <td>{row.data_emissao || "N/A"}</td>
                       <td
                         onClick={() => copyAwbLast8Digits(row.awb)}
                         style={{ cursor: "pointer" }}
                       >
                         <b>{row.awb || "N/A"}</b>
                       </td>
-                      <td>{row.franchise_data_emissao || "N/A"}</td>
-                      <td>{row.origem || "N/A"}</td>
+                      <td>{row.fr_data_emissao || "N/A"}</td>
+                      <td>{row.fr_origem || "N/A"}</td>
                       <td>
-                        <b>{row.destino || "N/A"}</b>
+                        <b>{row.fr_destino || "N/A"}</b>
                       </td>
-                      <td className="text-start">{row.tomador || "N/A"}</td>
+                      <td className="text-start">{row.fr_tomador || "N/A"}</td>
                       <td className="text-start">
-                        {row.destinatario || "N/A"}
+                        {row.fr_destinatario || "N/A"}
                       </td>
                       <td>{row.numero_voo || "N/A"}</td>
                       <td>

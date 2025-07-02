@@ -1,5 +1,3 @@
-// TODO: Se, ao importar o termo, a data da última importação do franchise for maior do que 30 minutos, informar via TOAST que há chance de o AWB não ser encontrado.
-
 // frontend/src/components/CombinedData.jsx
 
 import React, {
@@ -19,6 +17,12 @@ import ImportActions from "./ImportActions";
 import * as XLSX from "xlsx";
 import logActivity from "../utils/logService"; // --- IMPORTAR O SERVIÇO DE LOG ---
 
+// --- NOVOS IMPORTS DO MUI ---
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+
 // TooltipWrapper (mantido)
 const TooltipWrapper = ({ children, title }) => {
   return (
@@ -33,6 +37,36 @@ const TooltipWrapper = ({ children, title }) => {
   );
 };
 
+// --- NOVO COMPONENTE AUXILIAR PARA AS ABAS ---
+// Este componente ajuda a renderizar o conteúdo de cada aba.
+function TabPanel(props) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`simple-tabpanel-${index}`}
+      aria-labelledby={`simple-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 0 }}> {/* Removido padding padrão se for tabela */}
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
+
+// Função auxiliar para acessibilidade das abas
+function a11yProps(index) {
+  return {
+    id: `simple-tab-${index}`,
+    'aria-controls': `simple-tabpanel-${index}`,
+  };
+}
+
 function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
   const [fullData, setFullData] = useState([]);
   const [filteredLocalData, setFilteredLocalData] = useState([]);
@@ -42,7 +76,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
 
   const [awbsByDestination, setAwbsByDestination] = useState([]);
   const [missingDates, setMissingDates] = useState({});
-  const [lastFranchiseUpdate, setLastFranchiseUpdate] = useState("N/A"); // NOVO ESTADO
+  const [lastFranchiseUpdate, setLastFranchiseUpdate] = useState("N/A");
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [toast, setToast] = useState({
@@ -57,6 +91,13 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
   const [itemsPerPage] = useState(50);
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+  // --- NOVO ESTADO PARA CONTROLAR A ABA SELECIONADA ---
+  const [selectedTab, setSelectedTab] = useState(0);
+
+  const handleTabChange = (event, newValue) => {
+    setSelectedTab(newValue);
+  };
 
   const showAppToast = useCallback((title, message, type) => {
     setToast({ show: true, title, message, type });
@@ -90,7 +131,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     }
   }, [BACKEND_URL, showAppToast]);
 
-  // NOVO useEffect para buscar a última data de atualização
   const fetchLastFranchiseImportDate = useCallback(async () => {
     try {
       const response = await axios.get(
@@ -115,7 +155,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         queryParams.append("numeroVoo", filters.voo.trim());
       }
       if (filters.dataTermo && filters.dataTermo.trim()) {
-        queryParams.append("dataRegistro", filters.dataTermo.trim()); // Param name matches backend filter
+        queryParams.append("dataTermo", filters.dataTermo.trim()); // Param name matches backend filter
       }
       if (filters.awb && filters.awb.trim()) {
         queryParams.append("awb", filters.awb.trim());
@@ -137,7 +177,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         "Erro ao buscar os dados: " +
           (err.response?.data?.message || err.message)
       );
-      console.error("Erro ao buscar dados combinados:", error);
+      console.error("Erro ao buscar dados combinados:", err); // Use err aqui, não 'error'
       showAppToast(
         "Erro",
         `Falha ao carregar dados combinados: ${
@@ -151,7 +191,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     }
   }, [filters, BACKEND_URL, showAppToast]);
 
-  // Modificar handleProcessingChange para recarregar a data da última atualização
   const handleProcessingChange = useCallback(
     (processing, type, extractedData) => {
       setIsProcessing(processing);
@@ -159,7 +198,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         fetchData();
         fetchAwbsByDestination();
         fetchMissingDates();
-        fetchLastFranchiseImportDate(); // Recarregar após qualquer importação
+        fetchLastFranchiseImportDate();
 
         if (type === "termos" && extractedData) {
           onTermosImported("extractedTerms", extractedData);
@@ -167,7 +206,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             "Importação de Termos Concluída",
             {
               voo:
-                extractedData.length > 0 ? extractedData[0].numero_voo : "N/A", // Exemplo de detalhe
+                extractedData.length > 0 ? extractedData[0].numero_voo : "N/A",
               totalRegistros: extractedData.length,
             },
             true
@@ -202,17 +241,16 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     fetchData();
   }, [fetchData]);
 
-  // Modificar useEffect para buscar também a última data de importação de franchise
   useEffect(() => {
     setCardsLoading(true);
     Promise.all([
       fetchAwbsByDestination(),
       fetchMissingDates(),
-      fetchLastFranchiseImportDate(), // Chamar a nova função
+      fetchLastFranchiseImportDate(),
     ]).finally(() => {
       setCardsLoading(false);
     });
-  }, [fetchAwbsByDestination, fetchMissingDates, fetchLastFranchiseImportDate]); // Adicionar como dependência
+  }, [fetchAwbsByDestination, fetchMissingDates, fetchLastFranchiseImportDate]);
 
   useEffect(() => {
     const dataToFilter = Array.isArray(fullData) ? fullData : [];
@@ -332,6 +370,8 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     showFranchiseModal: () =>
       importActionsInternalRef.current.showFranchiseModal(),
     showTermosModal: () => importActionsInternalRef.current.showTermosModal(),
+    // Adicionar esta função para o modal de status dos termos
+    showStatusTermosModal: () => importActionsInternalRef.current.showStatusTermosModal(),
   }));
 
   const exportToExcel = () => {
@@ -340,16 +380,16 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       : [];
     if (dataForExport.length === 0) {
       showAppToast("Aviso", "Não há dados para exportar.", "warning");
-      logActivity("Tentativa de Exportar Excel (Sem Dados)", {}, false); // Log de falha
+      logActivity("Tentativa de Exportar Excel (Sem Dados)", {}, false);
       return;
     }
 
     const ws = XLSX.utils.json_to_sheet(
       dataForExport.map((row) => ({
         Termo: row.numero_termo || "N/A",
-        "Dt Emissão": row.data_emissao || "N/A", // Use row.data_emissao para a data do Termo/SEFAZ
+        "Dt Emissão": row.data_emissao || "N/A",
         AWB: row.awb || "N/A",
-        "Emissão FR": row.fr_data_emissao || "N/A", // Use row.fr_data_emissao para a data do Franchise
+        "Emissão FR": row.fr_data_emissao || "N/A",
         Origem: row.fr_origem || "N/A",
         Destino: row.fr_destino || "N/A",
         Tomador: row.fr_tomador || "N/A",
@@ -541,132 +581,164 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           </div>
         </div>
       )}
-      <div className="card mb-4">
-        <div className="card-header text-center">
-          <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>
-        </div>
-        <div className="card-body">
-          <div className="d-flex flex-wrap align-items-center justify-content-center gap-3">
-            <label htmlFor="generalFilter" className="form-label mb-0 me-2">
-              Filtrar Tabela:
-            </label>
-            <input
-              type="text"
-              className="form-control flex-grow-1"
-              id="generalFilter"
-              value={generalFilter}
-              onChange={(e) => setGeneralFilter(e.target.value)}
-              placeholder="Buscar em todas as colunas..."
-              style={{ maxWidth: "300px" }}
-            />
-            <button
-              type="button"
-              className="btn btn-success"
-              onClick={exportToExcel}
-            >
-              Exportar para Excel
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {tableLoading ? (
-        <div
-          className="d-flex justify-content-center align-items-center"
-          style={{ minHeight: "300px" }}
+      {/* --- NOVA SEÇÃO DE ABAS --- */}
+      <Box sx={{ width: "100%", borderBottom: 1, borderColor: "divider" }}>
+        <Tabs
+          value={selectedTab}
+          onChange={handleTabChange}
+          aria-label="abas de dados"
+          centered
         >
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">
-              Carregando dados da tabela...
-            </span>
+          <Tab label="Controle" {...a11yProps(0)} />
+          <Tab label="Acompanhamento" {...a11yProps(1)} />
+          {/* Adicione mais abas aqui conforme necessário */}
+        </Tabs>
+      </Box>
+
+      {/* Conteúdo da Aba "Controle" */}
+      <TabPanel value={selectedTab} index={0}>
+        <div className="card mb-4 mt-3"> {/* Adicionado mt-3 para espaçamento após as abas */}
+          <div className="card-header text-center">
+            <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>
+          </div>
+          <div className="card-body">
+            <div className="d-flex flex-wrap align-items-center justify-content-center gap-3">
+              <label htmlFor="generalFilter" className="form-label mb-0 me-2">
+                Filtrar Tabela:
+              </label>
+              <input
+                type="text"
+                className="form-control flex-grow-1"
+                id="generalFilter"
+                value={generalFilter}
+                onChange={(e) => setGeneralFilter(e.target.value)}
+                placeholder="Buscar em todas as colunas..."
+                style={{ maxWidth: "300px" }}
+              />
+              <button
+                type="button"
+                className="btn btn-success"
+                onClick={exportToExcel}
+              >
+                Exportar para Excel
+              </button>
+            </div>
           </div>
         </div>
-      ) : Array.isArray(filteredLocalData) && filteredLocalData.length === 0 ? (
-        <div className="alert alert-info text-center" role="alert">
-          Nenhum dado encontrado para os critérios de filtro.
-        </div>
-      ) : (
-        <>
-          <div className="table-responsive">
-            <table className="table table-striped table-hover table-bordered vertical-align-middle text-center">
-              <thead className="table-dark">
-                <tr>
-                  <th>Termo</th>
-                  <th>Dt Emissão</th>
-                  <th>AWB</th>
-                  <th>Emissão</th>
-                  <th>Origem</th>
-                  <th>Destino</th>
-                  <th>Tomador</th>
-                  <th>Destinatário</th>
-                  <th>Voo</th>
-                  <th>NFe</th>
-                  <th>MDFe</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* AVISO DE WHITESPACE: Removido espaços entre <td> tags para evitar o aviso do React */}
-                {Array.isArray(currentItems) &&
-                  currentItems.map((row, index) => (
-                    <tr key={index}>
-                      <td>{row.numero_termo || "N/A"}</td>
-                      <td>{row.data_emissao || "N/A"}</td>
-                      <td
-                        onClick={() => copyAwbLast8Digits(row.awb)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <b>{row.awb || "N/A"}</b>
-                      </td>
-                      <td>{row.fr_data_emissao || "N/A"}</td>
-                      <td>{row.fr_origem || "N/A"}</td>
-                      <td>
-                        <b>{row.fr_destino || "N/A"}</b>
-                      </td>
-                      <td className="text-start">{row.fr_tomador || "N/A"}</td>
-                      <td className="text-start">
-                        {row.fr_destinatario || "N/A"}
-                      </td>
-                      <td>{row.numero_voo || "N/A"}</td>
-                      <td>
-                        {row.chave_nfe ? (
-                          <TooltipWrapper title={row.chave_nfe}>
-                            <FontAwesomeIcon
-                              icon={faCopy}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyToClipboard(row.chave_nfe, "Chave NFe");
-                              }}
-                              style={{ cursor: "pointer", color: "#007bff" }}
-                            />
-                          </TooltipWrapper>
-                        ) : (
-                          "N/A"
-                        )}
-                      </td>
-                      <td>
-                        {row.chave_mdfe ? (
-                          <TooltipWrapper title={row.chave_mdfe}>
-                            <FontAwesomeIcon
-                              icon={faCopy}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyToClipboard(row.chave_mdfe, "Chave MDFe");
-                              }}
-                              style={{ cursor: "pointer", color: "#007bff" }}
-                            />
-                          </TooltipWrapper>
-                        ) : (
-                          "N/A"
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+
+        {tableLoading ? (
+          <div
+            className="d-flex justify-content-center align-items-center"
+            style={{ minHeight: "300px" }}
+          >
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">
+                Carregando dados da tabela...
+              </span>
+            </div>
           </div>
-          {renderPaginationButtons()}
-        </>
-      )}
+        ) : Array.isArray(filteredLocalData) && filteredLocalData.length === 0 ? (
+          <div className="alert alert-info text-center" role="alert">
+            Nenhum dado encontrado para os critérios de filtro.
+          </div>
+        ) : (
+          <>
+            <div className="table-responsive">
+              <table className="table table-striped table-hover table-bordered vertical-align-middle text-center">
+                <thead className="table-dark">
+                  <tr>
+                    <th>Termo</th>
+                    <th>Dt Emissão</th>
+                    <th>AWB</th>
+                    <th>Emissão</th>
+                    <th>Origem</th>
+                    <th>Destino</th>
+                    <th>Tomador</th>
+                    <th>Destinatário</th>
+                    <th>Voo</th>
+                    <th>NFe</th>
+                    <th>MDFe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.isArray(currentItems) &&
+                    currentItems.map((row, index) => (
+                      <tr key={index}>
+                        <td>{row.numero_termo || "N/A"}</td>
+                        <td>{row.data_emissao || "N/A"}</td>
+                        <td
+                          onClick={() => copyAwbLast8Digits(row.awb)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          <b>{row.awb || "N/A"}</b>
+                        </td>
+                        <td>{row.fr_data_emissao || "N/A"}</td>
+                        <td>{row.fr_origem || "N/A"}</td>
+                        <td>
+                          <b>{row.fr_destino || "N/A"}</b>
+                        </td>
+                        <td className="text-start">
+                          {row.fr_tomador || "N/A"}
+                        </td>
+                        <td className="text-start">
+                          {row.fr_destinatario || "N/A"}
+                        </td>
+                        <td>{row.numero_voo || "N/A"}</td>
+                        <td>
+                          {row.chave_nfe ? (
+                            <TooltipWrapper title={row.chave_nfe}>
+                              <FontAwesomeIcon
+                                icon={faCopy}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(row.chave_nfe, "Chave NFe");
+                                }}
+                                style={{ cursor: "pointer", color: "#007bff" }}
+                              />
+                            </TooltipWrapper>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                        <td>
+                          {row.chave_mdfe ? (
+                            <TooltipWrapper title={row.chave_mdfe}>
+                              <FontAwesomeIcon
+                                icon={faCopy}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyToClipboard(row.chave_mdfe, "Chave MDFe");
+                                }}
+                                style={{ cursor: "pointer", color: "#007bff" }}
+                              />
+                            </TooltipWrapper>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            {renderPaginationButtons()}
+          </>
+        )}
+      </TabPanel>
+
+      {/* Conteúdo da Aba "Acompanhamento" */}
+      <TabPanel value={selectedTab} index={1}>
+        <div className="card mb-4 mt-3">
+          <div className="card-body">
+            <Typography variant="h6" component="p" sx={{ textAlign: 'center', p: 3 }}>
+              Conteúdo da aba "Acompanhamento" será implementado aqui.
+            </Typography>
+            {/* Futuramente, podemos ter uma tabela ou outros componentes aqui para acompanhar status de termos, por exemplo. */}
+          </div>
+        </div>
+      </TabPanel>
+      {/* --- FIM DA SEÇÃO DE ABAS --- */}
     </div>
   );
 }

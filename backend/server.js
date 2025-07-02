@@ -138,7 +138,7 @@ initializeDatabase()
 
         app.post('/api/upload-report', upload.single('xlsx_file'), validateXlsx, async (req, res) => {
             const file = req.file;
-
+            let connection; // <-- GARANTA QUE ESTA LINHA ESTEJA AQUI
             if (!file) {
                 await insertLog({ action: 'Falha no Upload de XLSX (Arquivo Ausente)', details: {}, success: false });
                 return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado.' });
@@ -159,7 +159,7 @@ initializeDatabase()
                     const mappedRow = columnsToExtractIndices.map((colIndex) => {
                         if (colIndex === 5 && typeof row[colIndex] === 'number') {
                             const excelSerialDate = row[colIndex];
-                            const date = new Date((excelSerialDate - 25569) * 24 * 60 * 60 * 1000);
+                            const date = new Date(Math.round((excelSerialDate - 25569) * 86400 * 1000));
                             return formatDateToDDMMYYYY(date);
                         }
                         return row[colIndex] || '';
@@ -171,7 +171,10 @@ initializeDatabase()
 
                 await insertFranchiseReportData(processedData);
 
-                const [rows] = await pool.execute('SELECT COUNT(*) AS total FROM franchise_report');
+                // --- ESTE É O BLOCO CRÍTICO PARA O ERRO 'execute' ---
+                const currentPool = await getDbPoolInstance(); // <-- GARANTA QUE ESTA LINHA ESTEJA AQUI
+                connection = await currentPool.getConnection(); // <-- E ESTA TAMBÉM
+                const [rows] = await connection.execute('SELECT COUNT(*) AS total FROM franchise_report'); // <-- AQUI O ERRO ACONTECIA
                 const count = rows[0].total;
 
                 const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
@@ -191,6 +194,10 @@ initializeDatabase()
                     success: false,
                     message: 'Erro ao processar arquivo: ' + (error.message || 'Erro desconhecido.')
                 });
+            } finally {
+                if (connection) { // <-- E ESTE FINALLY COM RELEASE
+                    connection.release();
+                }
             }
         });
 

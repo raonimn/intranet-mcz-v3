@@ -1,4 +1,5 @@
 // frontend/src/components/ImportActions.jsx
+
 import React, {
   useState,
   useRef,
@@ -8,12 +9,18 @@ import React, {
 import axios from "axios";
 import { Modal, Button, Form, Row, Col } from "react-bootstrap";
 
-import { DatePicker as MuiDatePicker } from "@mui/x-date-pickers/DatePicker";
+import { DatePicker as MuiDatePicker } from "@mui/x-date-pickers/DatePicker"; // Mantido caso seja usado futuramente para outros inputs de data
 import { TextField, InputAdornment } from "@mui/material";
+
+// Importar o novo modal
+import ImportStatusTermosModal from "./ImportStatusTermosModal"; // <--- NOVO IMPORT
 
 const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
   const [showFranchiseModal, setShowFranchiseModal] = useState(false);
   const [showTermosModal, setShowTermosModal] = useState(false);
+  // --- NOVO ESTADO PARA O MODAL DE STATUS DE TERMOS ---
+  const [showStatusTermosModal, setShowStatusTermosModal] = useState(false);
+
 
   const [franchiseFile, setFranchiseFile] = useState(null);
   const franchiseFileInputRef = useRef(null);
@@ -27,6 +34,8 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
   useImperativeHandle(ref, () => ({
     showFranchiseModal: () => setShowFranchiseModal(true),
     showTermosModal: () => setShowTermosModal(true),
+    // --- EXPOR FUNÇÃO PARA ABRIR O NOVO MODAL ---
+    showStatusTermosModal: () => setShowStatusTermosModal(true),
   }));
 
   const handleCloseFranchiseModal = () => {
@@ -80,7 +89,6 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
     setShowTermosModal(false);
     setTermosFile(null);
     setNumeroVooInput("");
-    // REMOVIDO: setDataRegistro(new Date());
     if (termosFileInputRef.current) termosFileInputRef.current.value = "";
   };
 
@@ -90,9 +98,6 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
     const value = e.target.value.replace(/\D/g, "");
     setNumeroVooInput(value.slice(0, 4));
   };
-
-  // REMOVIDO: handleDataRegistroChange
-  // const handleDataRegistroChange = (date) => setDataRegistro(date);
 
   const handleTermosUpload = async (e) => {
     e.preventDefault();
@@ -108,11 +113,6 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
       );
       return;
     }
-    // REMOVIDO: Validação da data de registro
-    // if (!dataRegistro) {
-    //     showToast('Erro', 'Por favor, informe a Data do Relatório.', 'danger');
-    //     return;
-    // }
 
     onProcessingChange(true, "termos");
     handleCloseTermosModal();
@@ -148,6 +148,17 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
       onProcessingChange(false, "termos");
     }
   };
+
+  // --- FUNÇÕES DE CONTROLE PARA O NOVO MODAL DE STATUS DE TERMOS ---
+  const handleCloseStatusTermosModal = () => setShowStatusTermosModal(false);
+  const handleStatusTermosImportSuccess = () => {
+    showToast("Sucesso", "Status de termos atualizados com sucesso!", "success");
+    // Você pode chamar onProcessingChange(false) aqui se quiser que o spinner geral pare,
+    // ou apenas showToast, dependendo da sua UX.
+    // E também disparar um re-fetch de dados combinados se o status for relevante para a tabela principal.
+    onProcessingChange(false, 'statusTermos'); // Parar o processamento e acionar re-fetch de dados
+  };
+
 
   return (
     <div className="d-flex justify-content-center mb-4">
@@ -236,6 +247,17 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
           </Form>
         </Modal.Body>
       </Modal>
+
+      {/* --- INCLUIR O NOVO MODAL AQUI --- */}
+      <ImportStatusTermosModal
+        show={showStatusTermosModal}
+        handleClose={handleCloseStatusTermosModal}
+        showToast={showToast}
+        onImportSuccess={() => {
+            handleStatusTermosImportSuccess();
+            onProcessingChange(false, "statusTermos"); // Parar o processamento principal
+        }}
+      />
     </div>
   );
 });

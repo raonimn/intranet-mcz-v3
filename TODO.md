@@ -1,0 +1,2 @@
+TODO: [FrontEnd] -  Na tela CombinedData, vamos alterar a tabela para deixá-la mais dinâmica. Teremos uma tab logo acima do rótulo da tabela, onde teremos inicialmente duas seções: Uma com nome "Controle" e outro com nome "Acompanhamento". O resultado atual estará em "Controle"
+TODO: [BackEnd] -   Se, ao importar o termo, a data da última importação do franchise for maior do que 30 minutos, informar via TOAST que há chance de o AWB não ser encontrado.

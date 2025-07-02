@@ -242,9 +242,10 @@ async function insertFranchiseReportData(data) {
 
   let insertedCount = 0;
   let duplicateCount = 0;
+  let updatedCount = 0;
   let totalProcessed = 0;
 
-  const currentPool = await getDbPoolInstance(); // Obter pool
+  const currentPool = await getDbPoolInstance();
   const connection = await currentPool.getConnection();
   try {
     await connection.beginTransaction();
@@ -271,6 +272,11 @@ async function insertFranchiseReportData(data) {
         continue;
       }
 
+      // --- NOVO LOG DE DEBUG CRÍTICO AQUI ---
+      debugLog(`[DEBUG-FRANCHISE-DATA] Processing AWB: "${awb}", Type: ${typeof awb}, Length: ${awb.length}`);
+      debugLog(`[DEBUG-FRANCHISE-DATA] Row data: `, row);
+
+
       try {
         const [result] = await connection.execute(insertUpdateQuery, [awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario]);
 
@@ -280,6 +286,7 @@ async function insertFranchiseReportData(data) {
             debugLog(`insertFranchiseReportData: Novo registro inserido no franchise_report: AWB ${awb}`);
           } else {
             duplicateCount++;
+            updatedCount++;
             debugLog(`insertFranchiseReportData: Registro duplicado atualizado no franchise_report: AWB ${awb}`);
           }
         }
@@ -287,7 +294,11 @@ async function insertFranchiseReportData(data) {
         if (error.code === 'ER_DUP_ENTRY') {
           debugWarn(`insertFranchiseReportData: Entrada duplicada para AWB: ${awb} em franchise_report. (Erro: ${error.message})`);
           duplicateCount++;
-        } else {
+        } else if (error.code === 'ER_DATA_TOO_LONG') { // Adicionei este caso para ajudar no debug
+          debugError(`insertFranchiseReportData: Erro de dados muito longos para coluna. AWB: ${awb}, Erro: ${error.sqlMessage}. Dado: ${JSON.stringify(row)}`);
+          throw error; // Relançar para capturar no bloco catch externo
+        }
+        else {
           debugError(`insertFranchiseReportData: Erro INESPERADO ao inserir dado em franchise_report: ${error.message} Dado: ${JSON.stringify(row)}`);
           throw error;
         }
@@ -305,8 +316,9 @@ async function insertFranchiseReportData(data) {
     }
     debugLog('--- Fim de insertFranchiseReportData ---');
   }
-  return { insertedCount, duplicateCount, totalProcessed };
+  return { insertedCount, duplicateCount, totalProcessed, updatedCount };
 }
+
 
 async function getSefazReportData(filters = {}) {
   debugLog('getSefazReportData: Início da função.');

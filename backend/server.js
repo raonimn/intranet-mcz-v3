@@ -10,14 +10,20 @@ const cors = require('cors');
 
 const {
     initializeDatabase,
-    pool,
+    pool, // <-- Esta variável 'pool' aqui pode estar undefined quando as rotas são definidas.
+    //     Precisamos usar a função getDbPoolInstance() dentro das rotas.
     insertSefazReportData,
     insertFranchiseReportData,
     getSefazReportData,
     getFranchiseReportData,
     insertLog,
     getLastFranchiseImportDate,
-    waitForDatabaseTables // <-- ADICIONE ESTA LINHA AQUI
+    waitForDatabaseTables,
+    insertOrUpdateSefazStatusTermos,
+    debugLog,
+    debugWarn,
+    debugError,
+    getDbPoolInstance // <--- Certifique-se de exportar e importar esta função
 } = require('./database');
 
 
@@ -73,32 +79,37 @@ const formatDateToDDMMYYYY = (date) => {
     return `${d}/${m}/${y}`;
 };
 
+// --- ESTRUTURA PRINCIPAL DO SERVIDOR: initializeDatabase() é chamado e ENVOLVE TODAS AS ROTAS ---
 initializeDatabase()
-    .then(async () => {
-        if (LOG_DEBUG) console.log('[SERVER-INIT] Banco de dados MySQL inicializado com sucesso.');
+    .then(async () => { // Adicionado 'async' aqui para usar 'await' dentro do .then
+        if (LOG_DEBUG) debugLog('[SERVER-INIT] Banco de dados MySQL inicializado com sucesso.');
 
-        // --- AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS ---
-        const tablesToWaitFor = ['sefaz_report', 'franchise_report', 'logs'];
-        const tablesReady = await waitForDatabaseTables(tablesToWaitFor); // Agora waitForDatabaseTables estará definido
+        // AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS E INICIAR O SERVIDOR EXPRESS
+        const tablesToWaitFor = ['sefaz_report', 'franchise_report', 'logs', 'sefaz_status_termos'];
+        const tablesReady = await waitForDatabaseTables(tablesToWaitFor);
 
         if (!tablesReady) {
-            console.error('[SERVER-INIT] Falha crítica: As tabelas do banco de dados não ficaram prontas a tempo. Encerrando servidor.');
-            process.exit(1);
+            debugError('[SERVER-INIT] Falha crítica: As tabelas do banco de dados não ficaram prontas a tempo. Encerrando servidor.');
+            process.exit(1); // Encerrar se as tabelas não estiverem prontas
         }
 
-        // Agora, TODAS as definições de rota e o app.listen() vêm AQUI DENTRO.
+        // --- DEFINIÇÕES DE ROTAS DO EXPRESS AQUI DENTRO ---
         app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
 
         app.post('/api/upload-pdf', upload.single('pdf_file'), async (req, res) => {
             const file = req.file;
             const numeroVoo = req.body.numeroVoo;
 
-            if (!file) return res.status(400).json({ success: false, message: 'Nenhum arquivo PDF enviado.' });
-            if (!numeroVoo || !numeroVoo.trim()) return res.status(400).json({ success: false, message: 'Por favor, insira o número do voo.' });
-
-            if (LOG_DEBUG) {
-                console.log(`[DEBUG-SERVER] PDF recebido: ${file.originalname}, Número do Voo: ${numeroVoo}`);
+            if (!file) {
+                await insertLog({ action: 'Falha no Upload de PDF (Arquivo Ausente)', details: {}, success: false });
+                return res.status(400).json({ success: false, message: 'Nenhum arquivo PDF enviado.' });
             }
+            if (!numeroVoo || !numeroVoo.trim()) {
+                await insertLog({ action: 'Falha no Upload de PDF (Voo Ausente)', details: { file: file.originalname }, success: false });
+                return res.status(400).json({ success: false, message: 'Por favor, insira o número do voo.' });
+            }
+
+            if (LOG_DEBUG) debugLog(`[DEBUG-SERVER] PDF recebido: ${file.originalname}, Número do Voo: ${numeroVoo}`);
 
             try {
                 const result = await processPdfAndSaveData(file.buffer, numeroVoo);
@@ -106,6 +117,7 @@ initializeDatabase()
                 const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
 
                 if (result.success) {
+                    await insertLog({ action: 'Importação de PDF Concluída', details: { file: file.originalname, voo: numeroVoo, inserted: result.insertedCount, duplicated: result.duplicateCount }, success: true });
                     res.status(200).json({
                         success: true,
                         message: `Voo ${numeroVoo} processado com sucesso.`,
@@ -114,10 +126,12 @@ initializeDatabase()
                         extractedData: result.extractedData
                     });
                 } else {
+                    await insertLog({ action: 'Falha no Processamento de PDF', details: { file: file.originalname, voo: numeroVoo, message: result.message }, success: false });
                     res.status(500).json({ success: false, message: result.message || 'Erro ao processar o PDF.' });
                 }
             } catch (error) {
-                console.error('[ERROR-SERVER] Erro na rota /api/upload-pdf:', error);
+                debugError(`[ERROR-SERVER] Erro na rota /api/upload-pdf: ${error.message}`);
+                await insertLog({ action: 'Erro Fatal no Upload de PDF', details: { file: file.originalname, voo: numeroVoo, error: error.message }, success: false });
                 res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
             }
         });
@@ -126,6 +140,7 @@ initializeDatabase()
             const file = req.file;
 
             if (!file) {
+                await insertLog({ action: 'Falha no Upload de XLSX (Arquivo Ausente)', details: {}, success: false });
                 return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado.' });
             }
 
@@ -136,9 +151,7 @@ initializeDatabase()
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = xlsx.utils.sheet_to_json(sheet, { header: 1, range: 0 });
 
-                if (LOG_DEBUG) {
-                    console.log('[DEBUG-SERVER] JSON data from XLSX (first 5 rows):', jsonData.slice(0, 5));
-                }
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] JSON data from XLSX (first 5 rows):', jsonData.slice(0, 5));
 
                 const columnsToExtractIndices = [1, 3, 5, 8, 9, 19, 54, 13];
 
@@ -154,9 +167,7 @@ initializeDatabase()
                     return mappedRow;
                 }).filter(row => row.some(cell => cell !== ''));
 
-                if (LOG_DEBUG) {
-                    console.log(`[DEBUG-SERVER] Total de linhas processadas do XLSX para inserção: ${processedData.length}`);
-                }
+                if (LOG_DEBUG) debugLog(`[DEBUG-SERVER] Total de linhas processadas do XLSX para inserção: ${processedData.length}`);
 
                 await insertFranchiseReportData(processedData);
 
@@ -165,6 +176,7 @@ initializeDatabase()
 
                 const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
 
+                await insertLog({ action: 'Importação de Franchise Concluída', details: { file: file.originalname, recordsProcessed: processedData.length }, success: true });
                 res.status(200).json({
                     success: true,
                     message: `Dados importados com sucesso! ${formatNumber(processedData.length)} registros processados do arquivo.`,
@@ -173,10 +185,8 @@ initializeDatabase()
                 });
 
             } catch (error) {
-                console.error(`[ERROR-SERVER] Erro fatal ao processar arquivo XLSX: ${error.message}`);
-                if (error.stack) {
-                    console.error('[ERROR-SERVER] Stack trace:', error.stack);
-                }
+                debugError(`[ERROR-SERVER] Erro fatal ao processar arquivo XLSX: ${error.message}`);
+                await insertLog({ action: 'Falha na Importação de Franchise', details: { file: file.originalname, error: error.message }, success: false });
                 res.status(500).json({
                     success: false,
                     message: 'Erro ao processar arquivo: ' + (error.message || 'Erro desconhecido.')
@@ -188,7 +198,9 @@ initializeDatabase()
             const { numeroVoo, dataTermo, awb, numeroTermo, destino } = req.query;
             let connection;
             try {
-                connection = await pool.getConnection();
+                // Obtém a instância do pool de conexões
+                const currentPool = await getDbPoolInstance();
+                connection = await currentPool.getConnection(); // <-- Correção aqui
 
                 let whereClauses = [];
                 let params = [];
@@ -289,15 +301,13 @@ initializeDatabase()
 
                 const finalParams = params.concat(finalHavingParams);
 
-                if (LOG_DEBUG) {
-                    console.log('[DEBUG-SERVER] Query Combined Data (Multi-Level Fallback):', query);
-                    console.log('[DEBUG-SERVER] Query Params Combined Data (Multi-Level Fallback):', finalParams);
-                }
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data (Multi-Level Fallback):', query);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params Combined Data (Multi-Level Fallback):', finalParams);
 
                 const [rows] = await connection.execute(query, finalParams);
                 res.status(200).json(rows);
             } catch (error) {
-                console.error(`[ERROR-SERVER] Erro durante a consulta de dados combinados: ${error.message}`);
+                debugError(`[ERROR-SERVER] Erro durante a consulta de dados combinados: ${error.message}`);
                 res.status(500).json({ success: false, message: 'Erro durante a consulta.' });
             } finally {
                 if (connection) {
@@ -309,7 +319,9 @@ initializeDatabase()
         app.get('/api/awbs-by-destination', async (req, res) => {
             let connection;
             try {
-                connection = await pool.getConnection();
+                // Obtém a instância do pool de conexões
+                const currentPool = await getDbPoolInstance();
+                connection = await currentPool.getConnection(); // <-- Correção aqui
                 const query = `
                     SELECT destino, COUNT(awb) AS total_awbs
                     FROM franchise_report
@@ -320,7 +332,7 @@ initializeDatabase()
                 const [rows] = await connection.execute(query);
                 res.status(200).json(rows);
             } catch (error) {
-                console.error(`[ERROR-SERVER] Erro ao buscar AWBs por destino: ${error.message}`);
+                debugError(`[ERROR-SERVER] Erro ao buscar AWBs por destino: ${error.message}`);
                 res.status(500).json({ success: false, message: 'Erro ao buscar AWBs por destino.' });
             } finally {
                 if (connection) connection.release();
@@ -330,7 +342,9 @@ initializeDatabase()
         app.get('/api/missing-dates', async (req, res) => {
             let connection;
             try {
-                connection = await pool.getConnection();
+                // Obtém a instância do pool de conexões
+                const currentPool = await getDbPoolInstance();
+                connection = await currentPool.getConnection(); // <-- Correção aqui
                 const missingDatesByDestination = {};
                 const today = new Date();
                 const thirtyDaysAgo = new Date();
@@ -365,7 +379,7 @@ initializeDatabase()
                 }
                 res.status(200).json(missingDatesByDestination);
             } catch (error) {
-                console.error(`[ERROR-SERVER] Erro ao buscar datas faltantes: ${error.message}`);
+                debugError(`[ERROR-SERVER] Erro ao buscar datas faltantes: ${error.message}`);
                 res.status(500).json({ success: false, message: 'Erro ao buscar datas faltantes.' });
             } finally {
                 if (connection) connection.release();
@@ -375,18 +389,19 @@ initializeDatabase()
         function validateXlsx(req, res, next) {
             const file = req.file;
             if (!file || file.mimetype !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+                debugWarn('Formato de arquivo XLSX inválido recebido.');
                 return res.status(400).json({ success: false, message: 'Formato de arquivo inválido. Por favor, envie um arquivo XLSX.' });
             }
             next();
         }
-        // --- NOVA ROTA PARA RECEBER LOGS DO FRONTEND ---
+        // --- ROTA PARA RECEBER LOGS DO FRONTEND ---
         app.post('/api/log', async (req, res) => {
             const { action, user_ip, mac_address, user_agent, details, success } = req.body;
             try {
                 await insertLog({ action, user_ip, mac_address, user_agent, details, success });
                 res.status(200).json({ success: true, message: 'Log registrado com sucesso.' });
             } catch (error) {
-                console.error(`[ERROR-SERVER] Erro ao processar requisição de log: ${error.message}`);
+                debugError(`[ERROR-SERVER] Erro ao processar requisição de log: ${error.message}`);
                 res.status(500).json({ success: false, message: 'Erro ao registrar log.' });
             }
         });
@@ -406,19 +421,108 @@ initializeDatabase()
                     res.status(200).json({ last_update: 'N/A' });
                 }
             } catch (error) {
-                console.error(`[ERROR-SERVER] Erro ao buscar última data de importação de franchise: ${error.message}`);
+                debugError(`[ERROR-SERVER] Erro ao buscar última data de importação de franchise: ${error.message}`);
                 res.status(500).json({ success: false, message: 'Erro ao buscar data de atualização.' });
             }
         });
 
-        app.listen(port, '0.0.0.0', () => {
-            console.log(`Backend rodando em http://0.0.0.0:${port}`);
-            if (LOG_DEBUG) {
-                console.log(`Modo de Depuração (LOG_DEBUG_MODE) está ATIVO.`);
+        // --- ROTA PARA UPLOAD E PROCESSAMENTO DE STATUS DE TERMOS ---
+        app.post('/api/upload-status-termos', async (req, res) => {
+            const { pasted_data } = req.body;
+
+            if (!pasted_data || typeof pasted_data !== 'string') {
+                await insertLog({ action: 'Falha na Importação de Status (Dados Inválidos)', details: { data: pasted_data }, success: false });
+                return res.status(400).json({ success: false, message: 'Dados colados inválidos ou ausentes.' });
             }
+
+            await insertLog({ action: 'Início da Importação de Status de Termos', details: { dataLength: pasted_data.length }, success: true });
+
+            try {
+                const lines = pasted_data.trim().split(/\r?\n/);
+                if (lines.length <= 1) {
+                    await insertLog({ action: 'Falha na Importação de Status (Sem Dados Válidos)', details: { data: pasted_data }, success: false });
+                    return res.status(400).json({ success: false, message: 'Nenhum dado válido para processar.' });
+                }
+
+                if (LOG_DEBUG) debugLog('Pasted data raw:', pasted_data);
+                if (LOG_DEBUG) debugLog('Parsed lines:', lines);
+
+                const dataRows = lines.slice(1); // Ignorar linha de cabeçalho
+
+                const parsedData = [];
+                for (const rowText of dataRows) {
+                    const rowPattern = /^(\S+)\s+(\S+)\s+(.+?)\s+(R\$?\s*[0-9.,]+)/;
+                    const match = rowText.match(rowPattern);
+
+                    if (!match) {
+                        debugWarn(`[WARN] Linha não corresponde ao padrão esperado, ignorando: "${rowText}"`);
+                        await insertLog({ action: 'Falha na Importação de Status (Linha Inválida)', details: { line: rowText }, success: false });
+                        continue;
+                    }
+
+                    if (LOG_DEBUG) debugLog(`Processing row: "${rowText}"`);
+                    if (LOG_DEBUG) debugLog('Row matches (regex extraction):', match);
+
+                    const numero_termo = match[1].trim();
+                    const data_status = match[2].trim();
+                    const situacao_bruta = match[3].trim();
+                    const valor_bruto = match[4].trim();
+
+                    const valor_final_para_db = valor_bruto
+                        ? parseFloat(valor_bruto.replace(/[^\d,.]/g, '').replace(',', '.'))
+                        : null;
+
+                    const situacao_limpa = situacao_bruta.replace(/R\$?\s*[0-9.,]+/, '').trim();
+
+
+                    if (LOG_DEBUG) debugLog(`Extracted numero_termo: "${numero_termo}"`);
+                    if (LOG_DEBUG) debugLog(`Extracted data_status: "${data_status}"`);
+                    if (LOG_DEBUG) debugLog(`Extracted situacao_limpa: "${situacao_limpa}"`);
+                    if (LOG_DEBUG) debugLog(`Extracted valor_bruto: "${valor_bruto}"`);
+                    if (LOG_DEBUG) debugLog(`Extracted valor_final_para_db: ${valor_final_para_db}`);
+
+                    parsedData.push([numero_termo, data_status, situacao_limpa, valor_final_para_db]);
+                }
+
+                if (parsedData.length === 0) {
+                    await insertLog({ action: 'Falha na Importação de Status (Nenhum Dado Parseado)', details: { pastedData: pasted_data }, success: false });
+                    return res.status(400).json({ success: false, message: 'Nenhum dado válido pôde ser extraído dos dados colados.' });
+                }
+
+                if (LOG_DEBUG) debugLog('Parsed data before DB insertion:', parsedData);
+
+                const result = await insertOrUpdateSefazStatusTermos(parsedData);
+
+                await insertLog({
+                    action: 'Importação de Status de Termos Concluída', details: {
+                        registrosProcessados: result.totalProcessed,
+                        inseridos: result.insertedCount,
+                        atualizados: result.updatedCount
+                    }, success: true
+                });
+
+                res.status(200).json({
+                    success: true,
+                    message: `Status de termos importados: ${result.insertedCount} inseridos, ${result.updatedCount} atualizados.`,
+                    insertedCount: result.insertedCount,
+                    updatedCount: result.updatedCount,
+                    totalProcessed: result.totalProcessed
+                });
+
+            } catch (error) {
+                debugError(`[ERROR-SERVER] Erro ao processar dados de status de termos: ${error.message}`);
+                await insertLog({ action: 'Falha na Importação de Status de Termos', details: { error: error.message, data: pasted_data }, success: false });
+                res.status(500).json({ success: false, message: 'Erro ao processar os dados de status de termos.' });
+            }
+        });
+
+
+        app.listen(port, '0.0.0.0', () => {
+            if (LOG_DEBUG) debugLog(`Backend rodando em http://0.0.0.0:${port}`);
+            if (LOG_DEBUG) debugLog(`Modo de Depuração (LOG_DEBUG_MODE) está ATIVO.`);
         });
     })
     .catch(err => {
-        console.error('[SERVER-INIT] Falha crítica ao iniciar o servidor devido a erro no DB:', err);
+        debugError('[SERVER-INIT] Falha crítica ao iniciar o servidor devido a erro no DB:', err);
         process.exit(1);
     });

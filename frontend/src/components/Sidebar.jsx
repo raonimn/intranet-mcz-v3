@@ -4,15 +4,6 @@ import { Dropdown, Form, Button } from 'react-bootstrap';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css'; // Estilos do datepicker
 
-const applyDateMask = (value) => {
-    value = value.replace(/\D/g, "");
-    if (value.length > 4) {
-        value = value.replace(/^(\d{2})(\d{2})(\d{4}).*/, "$1/$2/$3");
-    } else if (value.length > 2) {
-        value = value.replace(/^(\d{2})(\d{2}).*/, "$1/$2");
-    }
-    return value;
-};
 
 const formatDateToDDMMYYYY = (date) => {
     if (!date) return '';
@@ -76,6 +67,9 @@ function Sidebar({ isOpen, toggleSidebar, onFilterChange, onImportClick }) {
                             </Dropdown.Item>
                             <Dropdown.Item onClick={() => onImportClick('termos')}>
                                 Importar termos SEFAZ
+                            </Dropdown.Item>
+                            <Dropdown.Item onClick={() => onImportClick('termos-status')}>
+                                Atualizar status dos termos
                             </Dropdown.Item>
                             <Dropdown.Item disabled>
                                 Importar malha de voos (Desativado)

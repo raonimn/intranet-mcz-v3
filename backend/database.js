@@ -1,7 +1,5 @@
 // backend/database.js
 
-// backend/database.js
-
 const mysql = require('mysql2/promise');
 
 const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
@@ -10,32 +8,53 @@ const debugLog = (...args) => { if (LOG_DEBUG) { console.log('[DEBUG-DB]', ...ar
 const debugWarn = (...args) => { if (LOG_DEBUG) { console.warn('[DEBUG-DB]', ...args); } };
 const debugError = (...args) => { console.error('[ERROR-DB]', ...args); };
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+let initializedPool = null; // O pool será armazenado aqui, inicialmente null
 
-pool.getConnection()
-  .then(connection => {
-    debugLog('Pool de conexões MySQL criado e testado com sucesso!');
+// --- FUNÇÃO PARA OBTER A INSTÂNCIA DO POOL (SINGLETON) - MOVIDA PARA O TOPO ---
+// ESTA FUNÇÃO PRECISA SER DEFINIDA ANTES DE QUALQUER OUTRA FUNÇÃO QUE A CHAMA.
+async function getDbPoolInstance() {
+  debugLog('getDbPoolInstance: Verificando estado do pool. initializedPool:', initializedPool ? 'DEFINED' : 'NULL');
+  if (initializedPool) {
+    debugLog('getDbPoolInstance: Retornando pool existente.');
+    return initializedPool;
+  }
+
+  debugLog('getDbPoolInstance: Pool não inicializado. Criando novo Pool de conexões MySQL...');
+  try {
+    const tempPool = mysql.createPool({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+
+    const connection = await tempPool.getConnection();
+    debugLog('getDbPoolInstance: Novo Pool de conexões MySQL criado e testado com sucesso!');
     connection.release();
-  })
-  .catch(err => {
-    debugError('Erro FATAL ao criar/testar pool de conexões MySQL. Verifique credenciais e servidor:', err.message);
-  });
 
+    initializedPool = tempPool;
+    debugLog('getDbPoolInstance: Pool atribuído globalmente. Retornando novo pool.');
+    return initializedPool;
+  } catch (err) {
+    debugError('getDbPoolInstance: Erro FATAL ao criar/testar Pool de conexões MySQL:', err.message);
+    throw err;
+  }
+}
+
+
+// --- TODAS AS OUTRAS FUNÇÕES DEVEM VIR DEPOIS DE getDbPoolInstance ---
 
 async function initializeDatabase() {
-  debugLog('--- Início de initializeDatabase ---');
+  debugLog('initializeDatabase: Início da função.');
   let connection;
   try {
-    connection = await pool.getConnection();
-    debugLog('Conexão para verificação/criação de tabelas estabelecida!');
+    const currentPool = await getDbPoolInstance(); // pool agora garantidamente definido
+    debugLog('initializeDatabase: Pool obtido com sucesso. Verificando/Criando tabelas...');
+    connection = await currentPool.getConnection();
+    debugLog('initializeDatabase: Conexão para verificação/criação de tabelas estabelecida!');
 
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS sefaz_report (
@@ -50,7 +69,7 @@ async function initializeDatabase() {
                 data_registro DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         `);
-    debugLog('Tabela sefaz_report verificada/criada.');
+    debugLog('initializeDatabase: Tabela sefaz_report verificada/criada.');
 
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS franchise_report (
@@ -67,61 +86,69 @@ async function initializeDatabase() {
         `);
     debugLog('Tabela franchise_report verificada/criada.');
 
-    // --- NOVA TABELA DE LOGS ---
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS logs (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 action VARCHAR(255) NOT NULL,
                 user_ip VARCHAR(45),
-                mac_address VARCHAR(17),
+                mac_address VARCHAR(255),
                 user_agent TEXT,
                 details TEXT,
                 success BOOLEAN DEFAULT TRUE
             );
         `);
-    debugLog('Tabela logs verificada/criada.');
+    debugLog('initializeDatabase: Tabela logs verificada/criada.');
 
+    await connection.execute(`
+            CREATE TABLE IF NOT EXISTS sefaz_status_termos (
+                numero_termo VARCHAR(255) PRIMARY KEY,
+                data_status VARCHAR(10) NOT NULL,
+                situacao VARCHAR(255),
+                valor DECIMAL(10, 2),
+                data_registro DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+    debugLog('initializeDatabase: Tabela sefaz_status_termos verificada/criada.');
 
-    debugLog('Pool de conexões MySQL testado e tabelas verificadas com sucesso!');
+    debugLog('initializeDatabase: Pool de conexões MySQL testado e tabelas verificadas com sucesso!');
 
   } catch (error) {
-    debugError("Erro ao criar tabelas no banco de dados:", error);
+    debugError("initializeDatabase: Erro ao criar tabelas no banco de dados:", error);
     throw error;
   } finally {
     if (connection) {
       connection.release();
     }
-    debugLog('--- Fim de initializeDatabase ---');
+    debugLog('initializeDatabase: Fim da função.');
   }
 }
 
-
-// --- NOVA FUNÇÃO PARA VERIFICAR A EXISTÊNCIA DE TABELAS ---
 async function checkTableExistence(tableName) {
-    let connection;
-    try {
-        connection = await pool.getConnection();
-        // CORREÇÃO AQUI: Construir a string SQL para SHOW TABLES LIKE
-        const [rows] = await connection.execute(`SHOW TABLES LIKE '${tableName}'`); // Use aspas simples e concatene
-        return rows.length > 0;
-    } catch (error) {
-        debugError(`Erro ao verificar existência da tabela ${tableName}: ${error.message}`);
-        return false;
-    } finally {
-        if (connection) {
-            connection.release();
-        }
+  debugLog(`checkTableExistence: Verificando tabela ${tableName}.`);
+  let connection;
+  try {
+    const currentPool = await getDbPoolInstance();
+    connection = await currentPool.getConnection();
+    const [rows] = await connection.execute(`SHOW TABLES LIKE '${tableName}'`);
+    debugLog(`checkTableExistence: Tabela ${tableName} existe: ${rows.length > 0}`);
+    return rows.length > 0;
+  } catch (error) {
+    debugError(`checkTableExistence: Erro ao verificar existência da tabela ${tableName}: ${error.message}`);
+    return false;
+  } finally {
+    if (connection) {
+      connection.release();
     }
+  }
 }
 
-// --- NOVA FUNÇÃO PARA ESPERAR ATÉ QUE AS TABELAS ESTEJAM PRONTAS ---
-async function waitForDatabaseTables(tableNames, maxRetries = 10, retryInterval = 2000) { // 10 retries * 2 segundos = 20 segundos
-  debugLog('--- Início de waitForDatabaseTables ---');
+async function waitForDatabaseTables(tableNames, maxRetries = 10, retryInterval = 2000) {
+  debugLog('waitForDatabaseTables: Início da função.');
   for (let i = 0; i < maxRetries; i++) {
     let allTablesExist = true;
     for (const tableName of tableNames) {
-      const exists = await checkTableExistence(tableName);
+      const exists = await checkTableExistence(tableName); // checkTableExistence já usa getDbPoolInstance()
       if (!exists) {
         allTablesExist = false;
         break;
@@ -129,54 +156,28 @@ async function waitForDatabaseTables(tableNames, maxRetries = 10, retryInterval 
     }
 
     if (allTablesExist) {
-      debugLog('Todas as tabelas necessárias foram detectadas no banco de dados.');
+      debugLog('waitForDatabaseTables: Todas as tabelas necessárias foram detectadas no banco de dados.');
       return true;
     } else {
-      debugWarn(`Aguardando tabelas do banco de dados... Tentativa ${i + 1}/${maxRetries}`);
+      debugWarn(`waitForDatabaseTables: Aguardando tabelas do banco de dados... Tentativa ${i + 1}/${maxRetries}`);
       await new Promise(resolve => setTimeout(resolve, retryInterval));
     }
   }
-  debugError('Tempo esgotado! Nem todas as tabelas foram detectadas no banco de dados.');
+  debugError('waitForDatabaseTables: Tempo esgotado! Nem todas as tabelas foram detectadas no banco de dados.');
   return false;
 }
 
-// --- NOVA FUNÇÃO PARA INSERIR LOGS ---
-async function insertLog(logData) {
-  debugLog('--- Início de insertLog ---');
-  const { action, user_ip, mac_address, user_agent, details, success } = logData;
-  let connection;
-  try {
-    connection = await pool.getConnection();
-    const [result] = await connection.execute(
-      `
-            INSERT INTO logs (action, user_ip, mac_address, user_agent, details, success)
-            VALUES (?, ?, ?, ?, ?, ?)
-            `,
-      [action, user_ip, mac_address, user_agent, details, success]
-    );
-    debugLog(`Log inserido: ${action} - ID: ${result.insertId}`);
-  } catch (error) {
-    debugError(`Erro ao inserir log: ${error.message} LogData: ${JSON.stringify(logData)}`);
-  } finally {
-    if (connection) {
-      connection.release();
-    }
-    debugLog('--- Fim de insertLog ---');
-  }
-}
-
-// Funções de inserção e consulta (mantidas como estão, mas agora 'pool' está definido)
-
 async function insertSefazReportData(data, numeroVoo) {
-  debugLog('--- Início de insertSefazReportData ---');
-  debugLog('Dados a serem inseridos:', data.length);
-  debugLog('Número do Voo para inserção:', numeroVoo);
+  debugLog('insertSefazReportData: Início da função.');
+  debugLog('insertSefazReportData: Dados a serem inseridos:', data.length);
+  debugLog('insertSefazReportData: Número do Voo para inserção:', numeroVoo);
 
   let insertedCount = 0;
   let duplicateCount = 0;
   let totalProcessed = 0;
 
-  const connection = await pool.getConnection();
+  const currentPool = await getDbPoolInstance();
+  const connection = await currentPool.getConnection();
   try {
     await connection.beginTransaction();
 
@@ -200,24 +201,24 @@ async function insertSefazReportData(data, numeroVoo) {
         const [result] = await connection.execute(insertQuery, [data_emissao, chave_mdfe, numero_termo, chave_nfe, numero_cte, numero_nfe, numeroVoo]);
 
         if (result.affectedRows > 0) {
-          if (result.insertId > 0) { // Se um novo ID foi gerado, é uma nova inserção
+          if (result.insertId > 0) {
             insertedCount++;
-            debugLog(`Novo registro inserido: Termo ${numero_termo}, Chave NFe ${chave_nfe}`);
-          } else { // Se affectedRows > 0 e insertId é 0, é uma atualização
+            debugLog(`insertSefazReportData: Novo registro inserido: Termo ${numero_termo}, Chave NFe ${chave_nfe}`);
+          } else {
             duplicateCount++;
-            debugLog(`Registro duplicado atualizado: Termo ${numero_termo}, Chave NFe ${chave_nfe}`);
+            debugLog(`insertSefazReportData: Registro duplicado atualizado: Termo ${numero_termo}, Chave NFe ${chave_nfe}`);
           }
         }
       } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') { // MySQL specific duplicate entry error code
-          debugWarn(`Entrada duplicada para chave_nfe: ${chave_nfe}. (Erro: ${error.message})`);
+        if (error.code === 'ER_DUP_ENTRY') {
+          debugWarn(`insertSefazReportData: Entrada duplicada para chave_nfe: ${chave_nfe}. (Erro: ${error.message})`);
           duplicateCount++;
         } else if (error.code === 'ER_DATA_TOO_LONG') {
-          debugError(`Erro de dados muito longos para coluna: ${error.sqlMessage}. Dado: ${JSON.stringify(row)}`);
+          debugError(`insertSefazReportData: Erro de dados muito longos para coluna: ${error.sqlMessage}. Dado: ${JSON.stringify(row)}`);
         }
         else {
-          debugError(`Erro INESPERADO ao inserir dado em sefaz_report: ${error.message} Dado: ${JSON.stringify(row)}`);
-          throw error; // Re-lança outros erros para parar a transação
+          debugError(`insertSefazReportData: Erro INESPERADO ao inserir dado em sefaz_report: ${error.message} Dado: ${JSON.stringify(row)}`);
+          throw error;
         }
       }
     }
@@ -225,7 +226,7 @@ async function insertSefazReportData(data, numeroVoo) {
     debugLog(`Total processado: ${totalProcessed}, Inseridos: ${insertedCount}, Duplicados/Atualizados: ${duplicateCount}`);
   } catch (error) {
     await connection.rollback();
-    debugError("Erro geral durante o processo de inserção em sefaz_report:", error.message);
+    debugError("insertSefazReportData: Erro geral durante o processo de inserção em sefaz_report:", error.message);
     throw error;
   } finally {
     connection.release();
@@ -236,14 +237,15 @@ async function insertSefazReportData(data, numeroVoo) {
 
 
 async function insertFranchiseReportData(data) {
-  debugLog('--- Início de insertFranchiseReportData ---');
-  debugLog('Dados a serem inseridos no franchise_report:', data.length);
+  debugLog('insertFranchiseReportData: Início da função.');
+  debugLog('insertFranchiseReportData: Dados a serem inseridos no franchise_report:', data.length);
 
   let insertedCount = 0;
   let duplicateCount = 0;
   let totalProcessed = 0;
 
-  const connection = await pool.getConnection();
+  const currentPool = await getDbPoolInstance(); // Obter pool
+  const connection = await currentPool.getConnection();
   try {
     await connection.beginTransaction();
 
@@ -262,22 +264,10 @@ async function insertFranchiseReportData(data) {
 
     for (const row of data) {
       totalProcessed++;
-      // Mapeamento Planilha para Banco:
-      // Banco: AWB (PK), chave_cte, data_emissao, origem, destino, tomador, notas, destinatario
-      // Planilha: B, D, F, I, J, T, BC, N
-      // Indices (0-indexed):
-      // AWB: B (0)
-      // chave_cte: D (1)
-      // data_emissao: F (2)
-      // origem: I (3)
-      // destino: J (4)
-      // tomador: T (5)
-      // notas: BC (6)
-      // destinatario: N (7)
       const [awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario] = row;
 
-      if (!awb) { // AWB é a PK, deve ser obrigatório
-        debugWarn(`Registro com AWB vazio ou inválido pulado no franchise_report: ${JSON.stringify(row)}`);
+      if (!awb) {
+        debugWarn(`insertFranchiseReportData: Registro com AWB vazio ou inválido pulado no franchise_report: ${JSON.stringify(row)}`);
         continue;
       }
 
@@ -285,40 +275,41 @@ async function insertFranchiseReportData(data) {
         const [result] = await connection.execute(insertUpdateQuery, [awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario]);
 
         if (result.affectedRows > 0) {
-          if (result.insertId > 0) { // If a new ID was generated, it's a new insert
+          if (result.insertId > 0) {
             insertedCount++;
-            debugLog(`Novo registro inserido no franchise_report: AWB ${awb}`);
-          } else { // If affectedRows > 0 and insertId is 0, it's an update
+            debugLog(`insertFranchiseReportData: Novo registro inserido no franchise_report: AWB ${awb}`);
+          } else {
             duplicateCount++;
-            debugLog(`Registro duplicado atualizado no franchise_report: AWB ${awb}`);
+            debugLog(`insertFranchiseReportData: Registro duplicado atualizado no franchise_report: AWB ${awb}`);
           }
         }
       } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') { // MySQL specific duplicate entry error code
-          debugWarn(`Entrada duplicada para AWB: ${awb} em franchise_report. (Erro: ${error.message})`);
+        if (error.code === 'ER_DUP_ENTRY') {
+          debugWarn(`insertFranchiseReportData: Entrada duplicada para AWB: ${awb} em franchise_report. (Erro: ${error.message})`);
           duplicateCount++;
         } else {
-          debugError(`Erro INESPERADO ao inserir dado em franchise_report: ${error.message} Dado: ${JSON.stringify(row)}`);
+          debugError(`insertFranchiseReportData: Erro INESPERADO ao inserir dado em franchise_report: ${error.message} Dado: ${JSON.stringify(row)}`);
           throw error;
         }
       }
     }
     await connection.commit();
-    debugLog(`Total processado franchise: ${totalProcessed}, Inseridos: ${insertedCount}, Duplicados/Atualizados: ${duplicateCount}`);
+    debugLog(`Total processado franchise: ${totalProcessed}, Inseridos: ${insertedCount}, Duplicados/Atualizados: ${updatedCount}`);
   } catch (error) {
     await connection.rollback();
-    debugError("Erro geral durante o processo de inserção em franchise_report:", error.message);
+    debugError("insertFranchiseReportData: Erro geral durante o processo de inserção em franchise_report:", error.message);
     throw error;
   } finally {
-    connection.release();
+    if (connection) {
+      connection.release();
+    }
     debugLog('--- Fim de insertFranchiseReportData ---');
   }
   return { insertedCount, duplicateCount, totalProcessed };
 }
 
-// getSefazReportData com COALESCE para AWB no SELECT
 async function getSefazReportData(filters = {}) {
-  debugLog('--- Início de getSefazReportData ---');
+  debugLog('getSefazReportData: Início da função.');
   const {
     data_emissao,
     chave_mdfe,
@@ -327,7 +318,7 @@ async function getSefazReportData(filters = {}) {
     numero_cte,
     numero_nfe,
     numero_voo,
-    awb, // AWB será filtro no campo COALESCIDO
+    awb,
     startDate,
     endDate
   } = filters;
@@ -343,23 +334,30 @@ async function getSefazReportData(filters = {}) {
             sr.numero_nfe,
             sr.numero_voo,
             sr.data_registro,
-            -- AWB final, obtido via fallback
             COALESCE(
-                (SELECT fr1.awb FROM franchise_report fr1 WHERE fr1.numero_voo = sr.numero_voo AND sr.numero_cte = fr1.awb LIMIT 1),
-                (SELECT fr2.awb FROM franchise_report fr2 WHERE fr2.numero_voo = sr.numero_voo AND sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1)
+                (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
+                (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
+                (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
             ) AS awb,
             fr.chave_cte AS fr_chave_cte,
             fr.origem,
             fr.destino,
             fr.tomador,
-            fr.notas AS fr_notas, -- Renomeado para evitar conflito com notas do sefaz_report (se houvesse)
-            fr.data_emissao AS franchise_data_emissao,
+            fr.notas AS fr_notas,
+            fr.data_emissao AS fr_data_emissao,
             fr.destinatario
         FROM sefaz_report sr
         LEFT JOIN franchise_report fr
-        -- O JOIN principal é apenas pelo número de voo para não limitar a busca inicial
-        -- As condições de match para AWB estão agora na subquery COALESCE
         ON sr.numero_voo = fr.numero_voo
+        AND (
+            sr.numero_cte = fr.awb
+            OR
+            (
+                sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND
+                fr.notas IS NOT NULL AND fr.notas != '' AND
+                sr.numero_nfe = LTRIM(REPLACE(fr.notas, '0', ' '))
+            )
+        )
         WHERE 1=1
     `;
   const params = [];
@@ -392,14 +390,6 @@ async function getSefazReportData(filters = {}) {
     query += ` AND sr.numero_voo LIKE ?`;
     params.push(`%${numero_voo}%`);
   }
-  // AWB é um campo COALESCIDO. Filtrar por ele exige que o filtro seja aplicado *no resultado*.
-  // Uma forma de fazer isso em MySQL é com uma subquery ou HAVING (mas HAVING é pior para performance).
-  // Para simplificar e evitar CTEs complexas aqui, vou replicar a lógica do COALESCE no WHERE
-  // para o filtro de AWB, ou podemos pedir ao frontend para filtrar o AWB após o fetch, localmente.
-  // Ou, se a performance permitir, usar uma subquery para o AWB filtrável.
-  // Dada a complexidade, a rota no server.js já tem essa lógica de filtro AWB no WHERE,
-  // que se aplica ao campo 'awb' COALESCIDO.
-  // Vamos manter essa função getSefazReportData mais genérica.
 
   if (startDate) {
     query += ` AND STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') >= STR_TO_DATE(?, '%d/%m/%Y')`;
@@ -412,10 +402,10 @@ async function getSefazReportData(filters = {}) {
 
   try {
     const [rows] = await pool.execute(query, params);
-    debugLog(`Dados do sefaz_report recuperados: ${rows.length} linhas.`);
+    debugLog(`getSefazReportData: Dados recuperados: ${rows.length} linhas.`);
     return rows;
   } catch (error) {
-    debugError("Erro ao buscar dados do sefaz_report:", error);
+    debugError("getSefazReportData: Erro ao buscar dados:", error);
     throw error;
   } finally {
     debugLog('--- Fim de getSefazReportData ---');
@@ -423,7 +413,7 @@ async function getSefazReportData(filters = {}) {
 }
 
 async function getFranchiseReportData(filters = {}) {
-  debugLog('--- Início de getFranchiseReportData ---');
+  debugLog('getFranchiseReportData: Início da função.');
   const {
     awb,
     numero_voo,
@@ -447,7 +437,7 @@ async function getFranchiseReportData(filters = {}) {
     params.push(`%${numero_voo}%`);
   }
   if (data_voo) {
-    query += ` AND data_emissao = STR_TO_DATE(?, '%d/%m/%Y')`; // assuming data_voo from input is DD/MM/YYYY
+    query += ` AND data_emissao = STR_TO_DATE(?, '%d/%m/%Y')`;
     params.push(data_voo);
   }
   if (origem) {
@@ -473,30 +463,55 @@ async function getFranchiseReportData(filters = {}) {
 
   try {
     const [rows] = await pool.execute(query, params);
-    debugLog(`Dados do franchise_report recuperados: ${rows.length} linhas.`);
+    debugLog(`getFranchiseReportData: Dados recuperados: ${rows.length} linhas.`);
     return rows;
   } catch (error) {
-    debugError("Erro ao buscar dados do franchise_report:", error);
+    debugError("getFranchiseReportData: Erro ao buscar dados:", error);
     throw error;
   } finally {
     debugLog('--- Fim de getFranchiseReportData ---');
   }
 }
 
-// Adicionar nova função para buscar a última data de registro do franchise_report
-async function getLastFranchiseImportDate() {
-  debugLog('--- Início de getLastFranchiseImportDate ---');
+async function insertLog(logData) {
+  debugLog('insertLog: Início da função.');
+  const { action, user_ip = null, mac_address = null, user_agent = null, details = null, success = true } = logData;
   let connection;
   try {
-    connection = await pool.getConnection();
+    const currentPool = await getDbPoolInstance();
+    connection = await currentPool.getConnection();
+    const [result] = await connection.execute(
+      `
+            INSERT INTO logs (action, user_ip, mac_address, user_agent, details, success)
+            VALUES (?, ?, ?, ?, ?, ?)
+            `,
+      [action, user_ip, mac_address, user_agent, details, success]
+    );
+    debugLog(`insertLog: Log inserido: ${action} - ID: ${result.insertId}`);
+  } catch (error) {
+    debugError(`insertLog: Erro ao inserir log: ${error.message} LogData: ${JSON.stringify(logData)}`);
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+    debugLog('--- Fim de insertLog ---');
+  }
+}
+
+async function getLastFranchiseImportDate() {
+  debugLog('getLastFranchiseImportDate: Início da função.');
+  let connection;
+  try {
+    const currentPool = await getDbPoolInstance();
+    connection = await currentPool.getConnection();
     const [rows] = await connection.execute(
       `SELECT MAX(data_registro) AS last_date FROM franchise_report`
     );
-    const lastDate = rows[0].last_date; // Será um objeto Date ou null
-    debugLog('Última data de importação de franchise:', lastDate);
+    const lastDate = rows[0].last_date;
+    debugLog('getLastFranchiseImportDate: Última data de importação de franchise:', lastDate);
     return lastDate;
   } catch (error) {
-    debugError(`Erro ao buscar última data de importação de franchise: ${error.message}`);
+    debugError(`getLastFranchiseImportDate: Erro ao buscar última data de importação de franchise: ${error.message}`);
     return null;
   } finally {
     if (connection) {
@@ -506,15 +521,83 @@ async function getLastFranchiseImportDate() {
   }
 }
 
+async function insertOrUpdateSefazStatusTermos(data) {
+  debugLog('insertOrUpdateSefazStatusTermos: Início da função.');
+  debugLog('insertOrUpdateSefazStatusTermos: Dados a serem inseridos/atualizados em sefaz_status_termos:', data.length);
+
+  let insertedCount = 0;
+  let updatedCount = 0;
+  let totalProcessed = 0;
+
+  const currentPool = await getDbPoolInstance();
+  const connection = await currentPool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const insertUpdateQuery = `
+            INSERT INTO sefaz_status_termos (numero_termo, data_status, situacao, valor, data_registro)
+            VALUES (?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+                data_status = VALUES(data_status),
+                situacao = VALUES(situacao),
+                valor = VALUES(valor),
+                data_registro = NOW();
+        `;
+
+    for (const row of data) {
+      totalProcessed++;
+      const [numero_termo, data_status, situacao, valor_final_para_db] = row;
+
+      if (!numero_termo) {
+        debugWarn(`insertOrUpdateSefazStatusTermos: Registro com numero_termo vazio pulado: ${JSON.stringify(row)}`);
+        continue;
+      }
+
+      try {
+        const [result] = await connection.execute(insertUpdateQuery, [numero_termo, data_status, situacao, valor_final_para_db]);
+
+        if (result.affectedRows === 1) {
+          insertedCount++;
+          debugLog(`insertOrUpdateSefazStatusTermos: Novo status de termo inserido: ${numero_termo}`);
+        } else if (result.affectedRows === 2) {
+          updatedCount++;
+          debugLog(`insertOrUpdateSefazStatusTermos: Status de termo atualizado: ${numero_termo}`);
+        }
+      } catch (error) {
+        debugError(`insertOrUpdateSefazStatusTermos: Erro ao inserir/atualizar status de termo: ${error.message} Dado: ${JSON.stringify(row)}`);
+        throw error;
+      }
+    }
+    await connection.commit();
+    debugLog(`insertOrUpdateSefazStatusTermos: Total processado status termos: ${totalProcessed}, Inseridos: ${insertedCount}, Atualizados: ${updatedCount}`);
+  } catch (error) {
+    await connection.rollback();
+    debugError("insertOrUpdateSefazStatusTermos: Erro geral durante a inserção/atualização de status de termos:", error.message);
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+    debugLog('--- Fim de insertOrUpdateSefazStatusTermos ---');
+  }
+  return { insertedCount, updatedCount, totalProcessed };
+}
+
 
 module.exports = {
-    initializeDatabase,
-    pool,
-    insertSefazReportData,
-    insertFranchiseReportData,
-    getSefazReportData,
-    getFranchiseReportData,
-    insertLog,
-    getLastFranchiseImportDate,
-    waitForDatabaseTables // --- EXPORTAR A NOVA FUNÇÃO ---
+  initializeDatabase,
+  // getDbPoolInstance não precisa ser exportado explicitamente se as outras funções o chamam.
+  // Mas para fins de depuração e garantir que server.js possa chamá-lo para inicialização, vamos exportar.
+  getDbPoolInstance,
+  insertSefazReportData,
+  insertFranchiseReportData,
+  getSefazReportData,
+  getFranchiseReportData,
+  insertLog,
+  getLastFranchiseImportDate,
+  waitForDatabaseTables,
+  insertOrUpdateSefazStatusTermos,
+  debugLog,
+  debugWarn,
+  debugError
 };

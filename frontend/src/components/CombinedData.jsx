@@ -398,6 +398,9 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           </div>
         </div>
       )}
+      <h2 className="text-center mb-2 mt-2">
+        Análise de termos da SEFAZ-AL
+      </h2>
 
       <ToastContainer
         position="top-end"
@@ -428,7 +431,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         showToast={showAppToast}
         ref={importActionsInternalRef}
       />
-
       {cardsLoading ? (
         <div
           className="d-flex justify-content-center align-items-center"
@@ -539,11 +541,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           </div>
         </div>
       )}
-
-      <h2 className="text-center mb-4">
-        Resultado dos Termos da SEFAZ Importados
-      </h2>
-
       <div className="card mb-4">
         <div className="card-header text-center">
           <h5 className="mb-0">Pesquisa e Ações na Tabela</h5>

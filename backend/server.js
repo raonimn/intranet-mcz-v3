@@ -205,9 +205,8 @@ initializeDatabase()
             const { numeroVoo, dataTermo, awb, numeroTermo, destino } = req.query;
             let connection;
             try {
-                // Obtém a instância do pool de conexões
                 const currentPool = await getDbPoolInstance();
-                connection = await currentPool.getConnection(); // <-- Correção aqui
+                connection = await currentPool.getConnection();
 
                 let whereClauses = [];
                 let params = [];
@@ -226,7 +225,7 @@ initializeDatabase()
                     params.push(dataTermo.trim());
                 } else {
                     const today = new Date();
-                    const twoDaysAgo = new Date();
+                    const twoDaysAgo = new Date(); // Ajustado para 2 dias atrás
                     twoDaysAgo.setDate(today.getDate() - 2);
 
                     const todayFormattedForQuery = formatDateToDDMMYYYY(today);
@@ -245,71 +244,55 @@ initializeDatabase()
                 let finalHavingClauses = [];
                 let finalHavingParams = [];
 
+                // AQUI ESTAMOS FILTRANDO PELO CAMPO AWB DA SEFAZ_REPORT
                 if (awb && awb.trim() !== '') {
                     let formattedAwb = awb.trim();
                     if (!formattedAwb.startsWith('577')) {
                         formattedAwb = `577${formattedAwb}`;
                     }
-                    finalHavingClauses.push(`awb LIKE ?`);
+                    finalHavingClauses.push(`sd.awb LIKE ?`); // <--- USANDO sd.awb
                     finalHavingParams.push(`%${formattedAwb}%`);
                 }
                 if (destino && destino.trim() !== '') {
-                    finalHavingClauses.push(`fr_destino LIKE ?`);
+                    finalHavingClauses.push(`fr.destino LIKE ?`); // <--- USANDO fr.destino
                     finalHavingParams.push(`%${destino.toUpperCase().trim()}%`);
                 }
 
                 const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
                 const havingString = finalHavingClauses.length > 0 ? `HAVING ${finalHavingClauses.join(' AND ')}` : '';
 
+                // --- QUERY SIMPLIFICADA USANDO O NOVO CAMPO SR.AWB ---
                 const query = `
-                    WITH SefazDataWithCalculatedAwb AS (
-                        SELECT
-                            sr.id,
-                            sr.data_emissao,
-                            sr.chave_mdfe,
-                            sr.numero_termo,
-                            sr.chave_nfe,
-                            sr.numero_cte,
-                            sr.numero_nfe,
-                            sr.numero_voo,
-                            sr.data_registro,
-                            COALESCE(
-                                (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
-                                (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
-                                (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
-                            ) AS awb
-                        FROM sefaz_report sr
-                        ${whereString}
-                    )
-                    SELECT
-                        sd.id,
-                        sd.data_emissao,
-                        sd.chave_mdfe,
-                        sd.numero_termo,
-                        sd.chave_nfe,
-                        sd.numero_cte,
-                        sd.numero_nfe,
-                        sd.numero_voo,
-                        sd.data_registro,
-                        sd.awb,
-                        fr.chave_cte AS fr_chave_cte,
-                        fr.origem AS fr_origem,
-                        fr.destino AS fr_destino,
-                        fr.tomador AS fr_tomador,
-                        fr.notas AS fr_notas,
-                        fr.data_emissao AS fr_data_emissao,
-                        fr.destinatario AS fr_destinatario
-                    FROM SefazDataWithCalculatedAwb sd
-                    LEFT JOIN franchise_report fr
-                        ON sd.awb = fr.awb
-                    ${havingString}
-                    ORDER BY sd.data_emissao DESC, sd.numero_termo ASC;
-                `;
+            SELECT
+                sr.id,
+                sr.data_emissao,
+                sr.chave_mdfe,
+                sr.numero_termo,
+                sr.chave_nfe,
+                sr.numero_cte,
+                sr.numero_nfe,
+                sr.numero_voo,
+                sr.data_registro,
+                sr.awb, -- PEGA O AWB DIRETAMENTE DA SEFAZ_REPORT
+                fr.chave_cte AS fr_chave_cte,
+                fr.origem AS fr_origem,
+                fr.destino AS fr_destino,
+                fr.tomador AS fr_tomador,
+                fr.notas AS fr_notas,
+                fr.data_emissao AS fr_data_emissao,
+                fr.destinatario AS fr_destinatario
+            FROM sefaz_report sr
+            LEFT JOIN franchise_report fr
+                ON sr.awb = fr.awb -- JOIN SIMPLIFICADO PELO AWB
+            ${whereString}
+            ${havingString}
+            ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
+        `;
 
                 const finalParams = params.concat(finalHavingParams);
 
-                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data (Multi-Level Fallback):', query);
-                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params Combined Data (Multi-Level Fallback):', finalParams);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data (Simplificada):', query);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params Combined Data (Simplificada):', finalParams);
 
                 const [rows] = await connection.execute(query, finalParams);
                 res.status(200).json(rows);
@@ -322,6 +305,7 @@ initializeDatabase()
                 }
             }
         });
+
 
         app.get('/api/awbs-by-destination', async (req, res) => {
             let connection;

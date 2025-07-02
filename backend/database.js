@@ -51,11 +51,12 @@ async function initializeDatabase() {
   debugLog('initializeDatabase: Início da função.');
   let connection;
   try {
-    const currentPool = await getDbPoolInstance(); // pool agora garantidamente definido
+    const currentPool = await getDbPoolInstance();
     debugLog('initializeDatabase: Pool obtido com sucesso. Verificando/Criando tabelas...');
     connection = await currentPool.getConnection();
     debugLog('initializeDatabase: Conexão para verificação/criação de tabelas estabelecida!');
 
+    // ALTERAÇÃO AQUI: Adicionar coluna 'awb' em sefaz_report
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS sefaz_report (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -66,10 +67,19 @@ async function initializeDatabase() {
                 numero_cte VARCHAR(255),
                 numero_nfe VARCHAR(255),
                 numero_voo VARCHAR(255),
+                awb VARCHAR(255), -- NOVA COLUNA AQUI
                 data_registro DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         `);
-    debugLog('initializeDatabase: Tabela sefaz_report verificada/criada.');
+    debugLog('initializeDatabase: Tabela sefaz_report verificada/criada (com coluna awb).');
+
+    // Se a coluna 'awb' já existir, mas você adicionou isso depois,
+    // o MySQL ignorará o `CREATE TABLE IF NOT EXISTS`.
+    // Para adicionar a coluna a uma tabela existente (apenas uma vez):
+    // Você pode executar manualmente no seu DB client:
+    // ALTER TABLE sefaz_report ADD COLUMN awb VARCHAR(255);
+    // Ou adicionar a lógica de alteração aqui, mas isso é mais complexo para um script de inicialização.
+    // Para o nosso propósito de desenvolvimento, a criação acima já considera a coluna.
 
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS franchise_report (
@@ -124,6 +134,7 @@ async function initializeDatabase() {
   }
 }
 
+
 async function checkTableExistence(tableName) {
   debugLog(`checkTableExistence: Verificando tabela ${tableName}.`);
   let connection;
@@ -175,6 +186,7 @@ async function insertSefazReportData(data, numeroVoo) {
   let insertedCount = 0;
   let duplicateCount = 0;
   let totalProcessed = 0;
+  const processedTermos = []; // Para armazenar numero_termo dos termos processados
 
   const currentPool = await getDbPoolInstance();
   const connection = await currentPool.getConnection();
@@ -204,15 +216,19 @@ async function insertSefazReportData(data, numeroVoo) {
           if (result.insertId > 0) {
             insertedCount++;
             debugLog(`insertSefazReportData: Novo registro inserido: Termo ${numero_termo}, Chave NFe ${chave_nfe}`);
+            processedTermos.push(numero_termo);
           } else {
             duplicateCount++;
             debugLog(`insertSefazReportData: Registro duplicado atualizado: Termo ${numero_termo}, Chave NFe ${chave_nfe}`);
+            processedTermos.push(numero_termo); // Também conciliar atualizados
           }
         }
       } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') {
           debugWarn(`insertSefazReportData: Entrada duplicada para chave_nfe: ${chave_nfe}. (Erro: ${error.message})`);
           duplicateCount++;
+          // Se for uma duplicata, não adiciona a processedTermos, pois já existe no banco.
+          // A conciliação será feita posteriormente para todos os termos não conciliados.
         } else if (error.code === 'ER_DATA_TOO_LONG') {
           debugError(`insertSefazReportData: Erro de dados muito longos para coluna: ${error.sqlMessage}. Dado: ${JSON.stringify(row)}`);
         }
@@ -224,6 +240,14 @@ async function insertSefazReportData(data, numeroVoo) {
     }
     await connection.commit();
     debugLog(`Total processado: ${totalProcessed}, Inseridos: ${insertedCount}, Duplicados/Atualizados: ${duplicateCount}`);
+
+    // --- CHAMA A FUNÇÃO DE CONCILIAÇÃO APÓS A INSERÇÃO DE SEFAZ_REPORT ---
+    // Idealmente, chamar reconcileSefazReportWithFranchise para os termos que acabaram de ser inseridos/atualizados
+    // ou para todos os termos ainda sem AWB.
+    // Para simplificar agora, vamos re-conciliar todos os AWBs nulos.
+    const { reconciledCount } = await reconcileSefazReportWithFranchise(connection); // Passa a conexão da transação
+    debugLog(`insertSefazReportData: Conciliados ${reconciledCount} termos com AWB.`);
+
   } catch (error) {
     await connection.rollback();
     debugError("insertSefazReportData: Erro geral durante o processo de inserção em sefaz_report:", error.message);
@@ -236,6 +260,7 @@ async function insertSefazReportData(data, numeroVoo) {
 }
 
 
+
 async function insertFranchiseReportData(data) {
   debugLog('insertFranchiseReportData: Início da função.');
   debugLog('insertFranchiseReportData: Dados a serem inseridos no franchise_report:', data.length);
@@ -244,6 +269,7 @@ async function insertFranchiseReportData(data) {
   let duplicateCount = 0;
   let updatedCount = 0;
   let totalProcessed = 0;
+  const processedAwbs = []; // Para armazenar AWBs que foram inseridos/atualizados
 
   const currentPool = await getDbPoolInstance();
   const connection = await currentPool.getConnection();
@@ -272,11 +298,6 @@ async function insertFranchiseReportData(data) {
         continue;
       }
 
-      // --- NOVO LOG DE DEBUG CRÍTICO AQUI ---
-      debugLog(`[DEBUG-FRANCHISE-DATA] Processing AWB: "${awb}", Type: ${typeof awb}, Length: ${awb.length}`);
-      debugLog(`[DEBUG-FRANCHISE-DATA] Row data: `, row);
-
-
       try {
         const [result] = await connection.execute(insertUpdateQuery, [awb, chave_cte, data_emissao, origem, destino, tomador, notas, destinatario]);
 
@@ -284,19 +305,21 @@ async function insertFranchiseReportData(data) {
           if (result.insertId > 0) {
             insertedCount++;
             debugLog(`insertFranchiseReportData: Novo registro inserido no franchise_report: AWB ${awb}`);
+            processedAwbs.push(awb); // Adicionar AWB inserido
           } else {
             duplicateCount++;
             updatedCount++;
             debugLog(`insertFranchiseReportData: Registro duplicado atualizado no franchise_report: AWB ${awb}`);
+            processedAwbs.push(awb); // Adicionar AWB atualizado
           }
         }
       } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') {
           debugWarn(`insertFranchiseReportData: Entrada duplicada para AWB: ${awb} em franchise_report. (Erro: ${error.message})`);
           duplicateCount++;
-        } else if (error.code === 'ER_DATA_TOO_LONG') { // Adicionei este caso para ajudar no debug
+        } else if (error.code === 'ER_DATA_TOO_LONG') {
           debugError(`insertFranchiseReportData: Erro de dados muito longos para coluna. AWB: ${awb}, Erro: ${error.sqlMessage}. Dado: ${JSON.stringify(row)}`);
-          throw error; // Relançar para capturar no bloco catch externo
+          throw error;
         }
         else {
           debugError(`insertFranchiseReportData: Erro INESPERADO ao inserir dado em franchise_report: ${error.message} Dado: ${JSON.stringify(row)}`);
@@ -306,6 +329,16 @@ async function insertFranchiseReportData(data) {
     }
     await connection.commit();
     debugLog(`Total processado franchise: ${totalProcessed}, Inseridos: ${insertedCount}, Duplicados/Atualizados: ${updatedCount}`);
+
+    // --- CHAMA A FUNÇÃO DE CONCILIAÇÃO APÓS A INSERÇÃO DE FRANCHISE_REPORT ---
+    // Depois de inserir/atualizar AWBs no franchise_report, tentamos re-conciliar
+    // termos no sefaz_report que ainda não têm AWB ou que poderiam ter sido
+    // atualizados por esses novos dados.
+    // Vamos reconciliar todos os termos que ainda não têm AWB.
+    const { reconciledCount } = await reconcileSefazReportWithFranchise(connection); // Passa a conexão da transação
+    debugLog(`insertFranchiseReportData: Conciliados ${reconciledCount} termos com AWB.`);
+
+
   } catch (error) {
     await connection.rollback();
     debugError("insertFranchiseReportData: Erro geral durante o processo de inserção em franchise_report:", error.message);
@@ -318,6 +351,7 @@ async function insertFranchiseReportData(data) {
   }
   return { insertedCount, duplicateCount, totalProcessed, updatedCount };
 }
+
 
 
 async function getSefazReportData(filters = {}) {
@@ -596,10 +630,59 @@ async function insertOrUpdateSefazStatusTermos(data) {
 }
 
 
+/**
+ * Tenta conciliar entradas na sefaz_report com awb da franchise_report.
+ * Usa as lógicas de COALESCE baseadas em numero_cte ou numero_nfe para encontrar o AWB.
+ * @param {mysql.PoolConnection} connection - A conexão ativa do pool.
+ * @param {string|null} specificTermo - Opcional. Se fornecido, concilia apenas para este numero_termo.
+ * @param {string|null} specificAwb - Opcional. Se fornecido, concilia apenas para termos que se relacionam a este AWB.
+ * @returns {Promise<{ reconciledCount: number }>}
+ */
+async function reconcileSefazReportWithFranchise(connection, specificTermo = null, specificAwb = null) {
+  debugLog('reconcileSefazReportWithFranchise: Início da função.');
+  let reconciledCount = 0;
+
+  let query = `
+        UPDATE sefaz_report sr
+        SET sr.awb = COALESCE(
+            (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
+            (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
+            (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
+        )
+        WHERE sr.awb IS NULL OR sr.awb = '';
+    `;
+  const params = [];
+
+  if (specificTermo) {
+    query += ` AND sr.numero_termo = ?`;
+    params.push(specificTermo);
+  }
+  if (specificAwb) {
+    // Se um AWB específico foi importado/atualizado no franchise,
+    // queremos re-conciliar termos que poderiam se ligar a ele.
+    // Isso é mais complexo, pois a conciliação usa numero_cte ou numero_nfe para encontrar o AWB.
+    // Para simplificar, faremos uma re-conciliação mais ampla ou confiaremos na lógica de "AWB IS NULL".
+    // Por agora, o filtro specificAwb não será direto nesta query UPDATE.
+    // O melhor é fazer uma re-conciliação para todos os termos não-conciliados
+    // ou para um conjunto de termos potencialmente afetados.
+    debugWarn(`reconcileSefazReportWithFranchise: 'specificAwb' parameter is not directly used in UPDATE query logic for now.`);
+  }
+
+  try {
+    const [result] = await connection.execute(query, params);
+    reconciledCount = result.affectedRows;
+    debugLog(`reconcileSefazReportWithFranchise: ${reconciledCount} registros da sefaz_report conciliados/atualizados.`);
+  } catch (error) {
+    debugError(`reconcileSefazReportWithFranchise: Erro durante a conciliação: ${error.message}`);
+    throw error;
+  } finally {
+    debugLog('reconcileSefazReportWithFranchise: Fim da função.');
+  }
+  return { reconciledCount };
+}
+
 module.exports = {
   initializeDatabase,
-  // getDbPoolInstance não precisa ser exportado explicitamente se as outras funções o chamam.
-  // Mas para fins de depuração e garantir que server.js possa chamá-lo para inicialização, vamos exportar.
   getDbPoolInstance,
   insertSefazReportData,
   insertFranchiseReportData,
@@ -609,6 +692,7 @@ module.exports = {
   getLastFranchiseImportDate,
   waitForDatabaseTables,
   insertOrUpdateSefazStatusTermos,
+  reconcileSefazReportWithFranchise, // <-- EXPOR A NOVA FUNÇÃO
   debugLog,
   debugWarn,
   debugError

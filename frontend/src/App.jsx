@@ -3,7 +3,9 @@ import React, { useState, useRef, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import CombinedData from "./components/CombinedData";
-// REMOVIDO: import ExtractedTermDataModal from './components/ExtractedTermDataModal'; // Já estava comentado, certifique-se de que a linha não existe
+import ImportStatusTermosModal from "./components/ImportStatusTermosModal";
+// REMOVER COMPLETAMENTE ESTA LINHA:
+// import ExtractedTermDataModal from "./components/ExtractedTermDataModal"; // Já estava comentado, certifique-se de que a linha não existe
 
 // MUI Imports (mantidos)
 import Drawer from "@mui/material/Drawer";
@@ -20,6 +22,9 @@ import Button from "@mui/material/Button";
 import Tooltip from "@mui/material/Tooltip";
 import Dropdown from "react-bootstrap/Dropdown";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import Toast from "react-bootstrap/Toast";
+import ToastContainer from "react-bootstrap/ToastContainer";
+
 
 // Icons (mantidos)
 import MenuIcon from "@mui/icons-material/Menu";
@@ -52,8 +57,16 @@ function App() {
 
   const combinedDataRef = useRef(null);
 
-  // REMOVIDO TOTALMENTE: showExtractedDataModal e extractedTermData (estes não devem mais existir)
-  // Certifique-se de que não há nenhuma declaração de estado para eles.
+  const [showImportStatusTermosModal, setShowImportStatusTermosModal] = useState(false);
+  // REMOVER COMPLETAMENTE ESTES ESTADOS:
+  // const [showExtractedDataModal, setShowExtractedDataModal] = useState(false);
+  // const [extractedTermData, setExtractedTermData] = useState([]);
+
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const showAppToast = useCallback((title, message, type) => {
+    setToast({ show: true, title, message, type });
+  }, []);
+
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -75,26 +88,69 @@ function App() {
     [filterAwb, filterTermo, filterDestino, filterVoo, filterDataTermo]
   );
 
-  // handleImportAction AGORA NÃO TEM PARÂMETRO 'data' E NÃO FAZ NADA COM MODAL DE TERMOS EXTRAÍDOS
-  const handleImportAction = useCallback((type) => {
-    // Removido 'data' do parâmetro
+  const handleImportAction = useCallback((type, data) => {
     if (combinedDataRef.current) {
       if (type === "franchise") {
         combinedDataRef.current.showFranchiseModal();
       } else if (type === "termos") {
         combinedDataRef.current.showTermosModal();
+      } else if (type === "status_termos") {
+        setShowImportStatusTermosModal(true);
       }
-      // REMOVIDA TOTALMENTE: a lógica `else if (type === 'extractedTerms' && data)`
-      // e qualquer chamada a `setExtractedTermData` ou `setShowExtractedDataModal`
+      // REMOVER COMPLETAMENTE ESTE BLOCO:
+      // else if (type === 'extractedTerms' && data) {
+      //   setExtractedTermData(data);
+      //   setShowExtractedDataModal(true);
+      // }
     }
     setIsSidebarOpen(false);
   }, []); // Dependências ajustadas
 
-  // REMOVIDO TOTALMENTE: handleCloseExtractedDataModal (não deve mais existir)
+  const handleCloseImportStatusTermosModal = () => {
+    setShowImportStatusTermosModal(false);
+  };
+
+  // REMOVER COMPLETAMENTE ESTA FUNÇÃO:
+  // const handleCloseExtractedDataModal = () => {
+  //   setShowExtractedDataModal(false);
+  //   setExtractedTermData([]);
+  // };
+
+  const handleImportSuccessStatusTermos = () => {
+    if (combinedDataRef.current && combinedDataRef.current.fetchData) {
+      combinedDataRef.current.fetchData();
+    }
+    handleCloseImportStatusTermosModal();
+  };
 
   return (
     <Router>
       <Navbar />
+
+      <ToastContainer
+        position="top-end"
+        className="p-3"
+        style={{ zIndex: 1051 }}
+      >
+        <Toast
+          onClose={() => setToast({ ...toast, show: false })}
+          show={toast.show}
+          delay={5000}
+          autohide
+          bg={toast.type}
+        >
+          <Toast.Header>
+            <strong className="me-auto">{toast.title}</strong>
+            <small>Agora</small>
+          </Toast.Header>
+          <Toast.Body
+            className={toast.type === "light" ? "text-dark" : "text-white"}
+          >
+            {toast.message}
+          </Toast.Body>
+        </Toast>
+      </ToastContainer>
+
 
       <Tooltip
         title={isSidebarOpen ? "Fechar Menu" : "Abrir Menu de Filtros"}
@@ -154,7 +210,6 @@ function App() {
                 </Dropdown.Toggle>
 
                 <Dropdown.Menu data-bs-theme="dark">
-                  {/* CORRIGIDO: de 'dark' para 'data-bs-theme="dark"' */}
                   <Dropdown.Item
                     onClick={() => handleImportAction("franchise")}
                   >
@@ -168,6 +223,16 @@ function App() {
                       <DescriptionIcon sx={{ color: "#dee2e6" }} />
                     </ListItemIcon>
                     <ListItemText primary="Importar termos SEFAZ" />
+                  </Dropdown.Item>
+                  {/* --- NOVO ITEM DE MENU --- */}
+                  <Dropdown.Item
+                    onClick={() => handleImportAction("status_termos")}
+                  >
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      <DescriptionIcon sx={{ color: "#dee2e6" }} />{" "}
+                      {/* Pode usar um ícone diferente se preferir */}
+                    </ListItemIcon>
+                    <ListItemText primary="Importar Status Termos" />
                   </Dropdown.Item>
                   <Dropdown.Item disabled>
                     <ListItemIcon sx={{ minWidth: 36 }}>
@@ -297,7 +362,8 @@ function App() {
               <CombinedData
                 filters={activeFilters}
                 isSidebarOpen={isSidebarOpen}
-                onTermosImported={handleImportAction} // <-- REATIVADO AQUI!
+                onTermosImported={handleImportAction}
+                showAppToast={showAppToast}
                 ref={combinedDataRef}
               />
             }
@@ -308,7 +374,8 @@ function App() {
               <CombinedData
                 filters={activeFilters}
                 isSidebarOpen={isSidebarOpen}
-                onTermosImported={handleImportAction} // <-- REATIVADO AQUI!
+                onTermosImported={handleImportAction}
+                showAppToast={showAppToast}
                 ref={combinedDataRef}
               />
             }
@@ -316,7 +383,12 @@ function App() {
         </Routes>
       </div>
 
-      {/* REMOVIDO: ExtractedTermDataModal - Confirmar que esta parte não existe no seu arquivo */}
+      <ImportStatusTermosModal
+        show={showImportStatusTermosModal}
+        handleClose={handleCloseImportStatusTermosModal}
+        showToast={showAppToast}
+        onImportSuccess={handleImportSuccessStatusTermos}
+      />
     </Router>
   );
 }

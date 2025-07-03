@@ -45,6 +45,8 @@ app.use(cors({
             /^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/,
             /^https?:\/\/localhost(:\d+)?$/,
             /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+            /^https?:\/\/intranet(:\d+)?$/, // <-- ADICIONE ESTA LINHA
+
         ];
 
         const isAllowed = allowedIpPatterns.some(pattern => {

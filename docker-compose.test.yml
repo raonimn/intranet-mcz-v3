@@ -2,7 +2,7 @@
 version: '3.8'
 
 services:
-  # Nomes de serviço simplificados (iguais aos de prod)
+  # Nomes de serviço simplificados (iguais aos de prod, mas isolados pela rede)
   mysql_db:
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
@@ -13,11 +13,15 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       TZ: America/Maceio
     volumes:
-      - mysql_data_test:/var/lib/mysql # O isolamento é feito pelo volume
+      # Volume isolado para o banco de dados de teste
+      - mysql_data_test:/var/lib/mysql
+      # Mesmo diretório de scripts, será executado no contexto deste container
+      - ./mysql-init-scripts:/docker-entrypoint-initdb.d
     ports:
-      - "${DB_PORT_TEST}:3306" # E pela porta
+      # Expõe na porta de teste definida no .env.test
+      - "${DB_PORT_TEST}:3306"
     networks:
-      - app-network-test # E pela rede
+      - app-network-test
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -30,10 +34,10 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8080"
+      - "8080" # Porta interna
     environment:
       PORT: 8080
-      DB_HOST: mysql_db # Aponta para o nome de serviço correto
+      DB_HOST: mysql_db # Aponta para o serviço mysql_db desta rede de teste
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
@@ -48,6 +52,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
+      # Expõe a porta interna 80 do Nginx na porta de teste do host
       - "${HOST_PORT_HTTP_TEST}:80"
     environment:
       VITE_BACKEND_URL: /api
@@ -57,8 +62,10 @@ services:
       - app-network-test
 
 networks:
+  # Rede exclusiva para o ambiente de teste
   app-network-test:
     driver: bridge
 
 volumes:
+  # Volume exclusivo para o banco de dados de teste
   mysql_data_test:

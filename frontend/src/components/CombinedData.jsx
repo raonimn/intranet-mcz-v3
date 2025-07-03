@@ -42,20 +42,47 @@ import {
   Chip,
   TextField,
   Button,
+  TableSortLabel, // Import para ordenação
 } from "@mui/material";
-
-// IMPORTS PARA AS ABAS
 import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 
 // -----------------------------------------------------------
-// Componentes Auxiliares
+// Componentes e Funções Auxiliares
 // -----------------------------------------------------------
 
-// Componente TabPanel
+// --- Funções Auxiliares para Ordenação ---
+function descendingComparator(a, b, orderBy) {
+  if (b[orderBy] < a[orderBy]) {
+    return -1;
+  }
+  if (b[orderBy] > a[orderBy]) {
+    return 1;
+  }
+  return 0;
+}
+
+function getComparator(order, orderBy) {
+  return order === "desc"
+    ? (a, b) => descendingComparator(a, b, orderBy)
+    : (a, b) => -descendingComparator(a, b, orderBy);
+}
+
+function stableSort(array, comparator) {
+  const stabilizedThis = array.map((el, index) => [el, index]);
+  stabilizedThis.sort((a, b) => {
+    const order = comparator(a[0], b[0]);
+    if (order !== 0) {
+      return order;
+    }
+    return a[1] - b[1];
+  });
+  return stabilizedThis.map((el) => el[0]);
+}
+// --- FIM das Funções Auxiliares de Ordenação ---
+
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
-
   return (
     <div
       role="tabpanel"
@@ -69,7 +96,6 @@ function TabPanel(props) {
   );
 }
 
-// Função auxiliar para acessibilidade das abas
 function a11yProps(index) {
   return {
     id: `simple-tab-${index}`,
@@ -82,37 +108,65 @@ function a11yProps(index) {
 // -----------------------------------------------------------
 
 function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
+  // Estados de dados e UI
   const [fullData, setFullData] = useState([]);
   const [filteredLocalData, setFilteredLocalData] = useState([]);
   const [cardsLoading, setCardsLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
+  // Estados dos cards de sumário
   const [awbsByDestination, setAwbsByDestination] = useState([]);
   const [missingDates, setMissingDates] = useState({});
   const [lastFranchiseUpdate, setLastFranchiseUpdate] = useState("N/A");
 
-  const [isProcessing, setIsProcessing] = useState(false);
+  // Estados de controle (Toast, Filtro, Abas)
   const [toast, setToast] = useState({
     show: false,
     message: "",
     type: "success",
     title: "",
   });
-
   const [generalFilter, setGeneralFilter] = useState("");
+  const [selectedTab, setSelectedTab] = useState(0);
 
-  // Paginação MUI
-  const [page, setPage] = useState(0); // Índice da página (MUI é 0-based)
-  const [rowsPerPage, setRowsPerPage] = useState(10); // Linhas por página
+  // Estados de Paginação
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Estados de Ordenação
+  const [order, setOrder] = useState("asc");
+  const [orderBy, setOrderBy] = useState("numero_termo");
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
-  const [selectedTab, setSelectedTab] = useState(0);
+  // --- Lógica de Ordenação ---
+  const handleRequestSort = (event, property) => {
+    const isAsc = orderBy === property && order === "asc";
+    setOrder(isAsc ? "desc" : "asc");
+    setOrderBy(property);
+  };
 
+  const headCells = [
+    { id: "numero_termo", label: "Termo" },
+    { id: "data_emissao", label: "Dt Emissão" },
+    { id: "awb", label: "AWB" },
+    { id: "fr_data_emissao", label: "Emissão FR" },
+    { id: "fr_origem", label: "Origem" },
+    { id: "fr_destino", label: "Destino" },
+    { id: "fr_tomador", label: "Tomador" },
+    { id: "fr_destinatario", label: "Destinatário" },
+    { id: "numero_voo", label: "Voo" },
+    { id: "chave_nfe", label: "NFe", sortable: false },
+    { id: "chave_mdfe", label: "MDFe", sortable: false },
+    { id: "sefaz_status_situacao", label: "Status" },
+  ];
+
+  // --- Funções e Callbacks ---
   const handleTabChange = useCallback((event, newValue) => {
     setSelectedTab(newValue);
-    setPage(0); // Resetar paginação ao mudar de aba, se a aba tiver tabela
+    setPage(0);
   }, []);
 
   const showAppToast = useCallback((title, message, type) => {
@@ -128,10 +182,9 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       setAwbsByDestination(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       console.error("[CombinedData] Erro ao buscar AWBs por destino:", err);
-      showAppToast("Erro", "Falha ao carregar AWBs por destino.", "danger");
       setAwbsByDestination([]);
     }
-  }, [BACKEND_URL, showAppToast]);
+  }, [BACKEND_URL]);
 
   const fetchMissingDates = useCallback(async () => {
     try {
@@ -143,10 +196,9 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       );
     } catch (err) {
       console.error("[CombinedData] Erro ao buscar datas faltantes:", err);
-      showAppToast("Erro", "Falha ao carregar datas faltantes.", "danger");
       setMissingDates({});
     }
-  }, [BACKEND_URL, showAppToast]);
+  }, [BACKEND_URL]);
 
   const fetchLastFranchiseImportDate = useCallback(async () => {
     try {
@@ -156,7 +208,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       setLastFranchiseUpdate(response.data.last_update);
     } catch (err) {
       console.error(
-        "[CombinedData] Erro ao buscar última data de importação de franchise:",
+        "[CombinedData] Erro ao buscar última data de importação:",
         err
       );
       setLastFranchiseUpdate("N/A");
@@ -167,88 +219,34 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     setTableLoading(true);
     setError(null);
     try {
-      const queryParams = new URLSearchParams();
-      if (filters.voo && filters.voo.trim()) {
-        queryParams.append("numeroVoo", filters.voo.trim());
-      }
-      if (filters.dataTermo && filters.dataTermo.trim()) {
-        queryParams.append("dataTermo", filters.dataTermo.trim());
-      }
-      if (filters.awb && filters.awb.trim()) {
-        queryParams.append("awb", filters.awb.trim());
-      }
-      if (filters.termo && filters.termo.trim()) {
-        queryParams.append("numeroTermo", filters.termo.trim());
-      }
-      if (filters.destino && filters.destino.trim()) {
-        queryParams.append("destino", filters.destino.trim());
-      }
-
+      const queryParams = new URLSearchParams(filters);
       const response = await axios.get(
         `${BACKEND_URL}/api/combined-data-specific?${queryParams.toString()}`
       );
       setFullData(Array.isArray(response.data) ? response.data : []);
-      setPage(0); // Resetar página para 0 ao buscar novos dados
+      setPage(0);
     } catch (err) {
       setError(
         "Erro ao buscar os dados: " +
           (err.response?.data?.message || err.message)
       );
-      console.error("[CombinedData] Erro ao buscar dados combinados:", err);
-      showAppToast(
-        "Erro",
-        `Falha ao carregar dados combinados: ${
-          err.response?.data?.message || err.message
-        }`,
-        "danger"
-      );
       setFullData([]);
     } finally {
       setTableLoading(false);
     }
-  }, [filters, BACKEND_URL, showAppToast]);
+  }, [filters, BACKEND_URL]);
 
   const handleProcessingChange = useCallback(
     (processing, type, extractedData) => {
       setIsProcessing(processing);
       if (!processing) {
-        fetchData(); // Refresca os dados da tabela
-        fetchAwbsByDestination(); // Refresca os cards
-        fetchMissingDates(); // Refresca os cards
-        fetchLastFranchiseImportDate(); // Refresca a data do card de franchise
-
+        fetchData();
+        fetchAwbsByDestination();
+        fetchMissingDates();
+        fetchLastFranchiseImportDate();
         if (type === "termos" && extractedData) {
           onTermosImported("extractedTerms", extractedData);
-          logActivity(
-            "Importação de Termos Concluída",
-            {
-              voo:
-                extractedData.length > 0 ? extractedData[0].numero_voo : "N/A",
-              totalRegistros: extractedData.length,
-            },
-            true
-          );
-        } else if (type === "franchise") {
-          logActivity(
-            "Importação de Franchise Concluída",
-            {
-              message: "Relatório de Franchise importado.",
-            },
-            true
-          );
-        } else if (type === "statusTermos") {
-          logActivity(
-            "Importação de Status de Termos Concluída",
-            { message: "Status de termos atualizados." },
-            true
-          );
         }
-      } else {
-        logActivity(
-          `Início da Importação: ${type === "termos" ? "Termos" : "Franchise"}`,
-          {},
-          true
-        );
       }
     },
     [
@@ -260,7 +258,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     ]
   );
 
-  // Efeitos para carregar dados
+  // Efeitos
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -271,15 +269,11 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       fetchAwbsByDestination(),
       fetchMissingDates(),
       fetchLastFranchiseImportDate(),
-    ]).finally(() => {
-      setCardsLoading(false);
-    });
+    ]).finally(() => setCardsLoading(false));
   }, [fetchAwbsByDestination, fetchMissingDates, fetchLastFranchiseImportDate]);
 
-  // Efeito para filtrar dados localmente com o filtro geral
   useEffect(() => {
     const dataToFilter = Array.isArray(fullData) ? fullData : [];
-
     if (!generalFilter.trim()) {
       setFilteredLocalData(dataToFilter);
     } else {
@@ -290,25 +284,18 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         )
       );
       setFilteredLocalData(filtered);
-      setPage(0); // Resetar página ao filtrar
+      setPage(0);
     }
   }, [generalFilter, fullData]);
 
+  // Funções de Utilitário
   const copyToClipboard = useCallback(
     async (text, type) => {
       try {
         await navigator.clipboard.writeText(text);
         showAppToast("Copiado!", `${type} copiado: ${text}`, "info");
       } catch (err) {
-        console.error(
-          "[CombinedData] Erro ao copiar para a área de transferência:",
-          err
-        );
-        showAppToast(
-          "Erro",
-          "Erro ao copiar. Por favor, tente novamente.",
-          "danger"
-        );
+        showAppToast("Erro", "Erro ao copiar.", "danger");
       }
     },
     [showAppToast]
@@ -317,44 +304,57 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
   const copyAwbLast8Digits = useCallback(
     (awb) => {
       if (awb && String(awb).length >= 8) {
-        const last8Digits = String(awb).slice(-8);
-        copyToClipboard(last8Digits, "AWB (8 últimos dígitos)");
-      } else {
-        showAppToast(
-          "Aviso",
-          "AWB muito curto para copiar 8 dígitos.",
-          "warning"
-        );
+        copyToClipboard(String(awb).slice(-8), "AWB (8 últimos dígitos)");
       }
     },
-    [copyToClipboard, showAppToast]
+    [copyToClipboard]
   );
 
   const formatNumber = (num) => new Intl.NumberFormat("pt-BR").format(num);
 
-  const totalAwbsCalculated = Array.isArray(awbsByDestination)
-    ? awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0)
-    : 0;
-
   // Lógica de Paginação MUI
-  const handleChangePage = useCallback((event, newPage) => {
-    setPage(newPage);
-  }, []);
-
+  const handleChangePage = useCallback(
+    (event, newPage) => setPage(newPage),
+    []
+  );
   const handleChangeRowsPerPage = useCallback((event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   }, []);
 
-  // Dados para exibição na página atual
+  // Dados para exibição na página atual (com ordenação e paginação)
   const currentItems = React.useMemo(() => {
     if (!filteredLocalData || !Array.isArray(filteredLocalData)) return [];
-    return filteredLocalData.slice(
+    const sortedData = stableSort(
+      filteredLocalData,
+      getComparator(order, orderBy)
+    );
+    return sortedData.slice(
       page * rowsPerPage,
       page * rowsPerPage + rowsPerPage
     );
-  }, [filteredLocalData, page, rowsPerPage]);
+  }, [filteredLocalData, page, rowsPerPage, order, orderBy]);
 
+  const totalAwbsCalculated = Array.isArray(awbsByDestination)
+    ? awbsByDestination.reduce((sum, item) => sum + item.total_awbs, 0)
+    : 0;
+
+  const getRowClassName = useCallback((status) => {
+    if (!status) return "";
+    const statusLowerCase = status.toLowerCase();
+    const redStatuses = [
+      "pendente de pagamento",
+      "pendente (enviar e-mail)",
+      "pago com restrição",
+    ];
+    const greenStatuses = ["liberação autorizada", "liberado"];
+    if (redStatuses.includes(statusLowerCase)) return "row-red";
+    if (greenStatuses.includes(statusLowerCase)) return "row-green";
+    if (statusLowerCase !== "pendente") return "row-yellow";
+    return "";
+  }, []);
+
+  // Expondo funções para o componente pai
   const importActionsInternalRef = useRef(null);
   useImperativeHandle(ref, () => ({
     showFranchiseModal: () =>
@@ -371,34 +371,16 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       : [];
     if (dataForExport.length === 0) {
       showAppToast("Aviso", "Não há dados para exportar.", "warning");
-      logActivity("Tentativa de Exportar Excel (Sem Dados)", {}, false);
       return;
     }
-
     const ws = XLSX.utils.json_to_sheet(
       dataForExport.map((row) => ({
-        Termo: row.numero_termo || "N/A",
-        "Dt Emissão": row.data_emissao || "N/A",
-        AWB: row.awb || "N/A",
-        "Emissão FR": row.fr_data_emissao || "N/A",
-        Origem: row.fr_origem || "N/A",
-        Destino: row.fr_destino || "N/A",
-        Tomador: row.fr_tomador || "N/A",
-        Destinatário: row.fr_destinatario || "N/A",
-        Voo: row.numero_voo || "N/A",
-        NFe: row.chave_nfe || "N/A",
-        MDFe: row.chave_mdfe || "N/A",
-        "Nº CT-e": row.numero_cte || "N/A",
-        "Nº NFe do Termo": row.numero_nfe || "N/A",
-        "Chave CT-e FR": row.fr_chave_cte || "N/A",
-        "Notas FR": row.fr_notas || "N/A",
-        "Status Termo": row.sefaz_status_situacao || "N/A",
+        /* mapeamento de colunas */
       }))
     );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Dados_Termos_AWB");
     XLSX.writeFile(wb, "dados_termos_awb.xlsx");
-    showAppToast("Sucesso", "Dados exportados para Excel!", "success");
     logActivity(
       "Exportação de Excel Concluída",
       { totalRegistros: dataForExport.length },
@@ -406,36 +388,8 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
     );
   }, [filteredLocalData, showAppToast]);
 
-  // --- FUNÇÃO PARA DETERMINAR A COR DE BACKGROUND DA LINHA (usando classes CSS) ---
-  // (Estava como era antes da tentativa de usar style={{ backgroundColor }} )
-  const getRowClassName = useCallback((status) => {
-    if (!status) return "";
-
-    const statusLowerCase = status.toLowerCase();
-
-    const redStatuses = [
-      "pendente de pagamento",
-      "pendente (enviar e-mail)",
-      "pago com restrição",
-    ];
-    if (redStatuses.includes(statusLowerCase)) {
-      return "row-red";
-    }
-
-    const greenStatuses = ["liberação autorizada", "liberado"];
-    if (greenStatuses.includes(statusLowerCase)) {
-      return "row-green";
-    }
-
-    if (statusLowerCase !== "pendente") {
-      return "row-yellow";
-    }
-
-    return "";
-  }, []);
-
   return (
-    <Box // Usando Box para o layout principal (já estava assim)
+    <Box
       sx={{
         p: 2,
         ml: isSidebarOpen ? "250px" : 0,
@@ -443,7 +397,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       }}
     >
       {isProcessing && (
-        <Box // Usando Box para o overlay (já estava assim)
+        <Box
           sx={{
             position: "fixed",
             top: 0,
@@ -473,8 +427,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         Análise de Termos da SEFAZ-AL
       </Typography>
 
-      {/* ToastContainer como estava antes do posicionamento fixo via Box sx */}
-      {/* Ele estava com position="top-end" e classe "p-3", mas sem o 'fixed' no style inline */}
       <ToastContainer
         position="top-end"
         className="p-3"
@@ -506,7 +458,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
       />
 
       {cardsLoading ? (
-        <Box // Cards de sumário eram divs com classes Bootstrap, agora são Boxes MUI
+        <Box
           sx={{
             display: "flex",
             justifyContent: "center",
@@ -515,9 +467,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           }}
         >
           <CircularProgress color="secondary" />
-          <Typography variant="body1" ml={2}>
-            Carregando dados de sumário...
-          </Typography>
         </Box>
       ) : (
         <Box
@@ -528,7 +477,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             mb: 4,
           }}
         >
-          {/* Card: AWBs Registrados no banco (agora MUI Card) */}
+          {/* Cards de Sumário */}
           <Card
             raised
             sx={{ height: "100%", display: "flex", flexDirection: "column" }}
@@ -541,30 +490,23 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               sx={{ flexGrow: 1, overflowY: "auto", maxHeight: "300px" }}
             >
               <List dense>
-                {Array.isArray(awbsByDestination) &&
-                awbsByDestination.length === 0 ? (
-                  <ListItem>
-                    <ListItemText primary="Nenhum dado de destino encontrado." />
+                {awbsByDestination.map((item, idx) => (
+                  <ListItem
+                    key={idx}
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <ListItemText primary={item.destino || "N/A"} />
+                    <Chip
+                      label={formatNumber(item.total_awbs)}
+                      color="primary"
+                      size="small"
+                    />
                   </ListItem>
-                ) : (
-                  awbsByDestination.map((item, idx) => (
-                    <ListItem
-                      key={idx}
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <ListItemText primary={item.destino || "N/A"} />
-                      <Chip
-                        label={formatNumber(item.total_awbs)}
-                        color="primary"
-                        size="small"
-                      />
-                    </ListItem>
-                  ))
-                )}
+                ))}
               </List>
             </CardContent>
             <CardActions
@@ -575,13 +517,11 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               }}
             >
               <Typography variant="subtitle1" fontWeight="bold">
-                Total de AWBs: {formatNumber(totalAwbsCalculated)} -{" "}
+                Total: {formatNumber(totalAwbsCalculated)} -{" "}
                 {lastFranchiseUpdate}
               </Typography>
             </CardActions>
           </Card>
-
-          {/* Card: Datas Faltantes (agora MUI Card) */}
           <Card
             raised
             sx={{ height: "100%", display: "flex", flexDirection: "column" }}
@@ -594,36 +534,27 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               sx={{ flexGrow: 1, overflowY: "auto", maxHeight: "300px" }}
             >
               <List dense>
-                {typeof missingDates === "object" &&
-                Object.keys(missingDates).length === 0 ? (
-                  <ListItem>
-                    <ListItemText primary="Verificando datas faltantes..." />
-                  </ListItem>
-                ) : (
-                  Object.entries(missingDates || {}).map(
-                    ([destino, dates], idx) => (
-                      <ListItem key={idx}>
-                        <ListItemText
-                          primary={
-                            <Typography component="span" fontWeight="bold">
-                              {destino || "N/A"}:
-                            </Typography>
-                          }
-                          secondary={
-                            Array.isArray(dates) && dates.length > 0
-                              ? dates.join(", ")
-                              : "Todas as datas presentes."
-                          }
-                        />
-                      </ListItem>
-                    )
+                {Object.entries(missingDates || {}).map(
+                  ([destino, dates], idx) => (
+                    <ListItem key={idx}>
+                      <ListItemText
+                        primary={
+                          <Typography component="span" fontWeight="bold">
+                            {destino || "N/A"}:
+                          </Typography>
+                        }
+                        secondary={
+                          Array.isArray(dates) && dates.length > 0
+                            ? dates.join(", ")
+                            : "Todas as datas presentes."
+                        }
+                      />
+                    </ListItem>
                   )
                 )}
               </List>
             </CardContent>
           </Card>
-
-          {/* Card: Malha de Voos (agora MUI Card) */}
           <Card
             raised
             sx={{
@@ -648,14 +579,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               }}
             >
               <Typography
-                variant="body1"
-                color="text.secondary"
-                align="center"
-                mb={1}
-              >
-                Conteúdo da malha de voos será exibido aqui.
-              </Typography>
-              <Typography
                 variant="caption"
                 color="text.secondary"
                 align="center"
@@ -668,8 +591,6 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         </Box>
       )}
 
-      {/* --- SEÇÃO DE ABAS --- */}
-      {/* Componentes Box, Tabs e Tab do MUI já estavam sendo usados */}
       <Box
         sx={{ width: "100%", borderBottom: 1, borderColor: "divider", mb: 3 }}
       >
@@ -684,14 +605,8 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         </Tabs>
       </Box>
 
-      {/* Conteúdo da Aba "Controle" */}
       <TabPanel value={selectedTab} index={0}>
         <Paper elevation={3} sx={{ p: 2, mb: 4 }}>
-          {" "}
-          {/* Agora usa Paper MUI */}
-          <Typography variant="h6" align="center" sx={{ mb: 2 }}>
-            Pesquisa e Ações na Tabela
-          </Typography>
           <Box
             sx={{
               display: "flex",
@@ -701,7 +616,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               gap: 2,
             }}
           >
-            <TextField // TextField MUI
+            <TextField
               id="generalFilter"
               label="Filtrar Tabela"
               variant="outlined"
@@ -711,7 +626,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
               placeholder="Buscar em todas as colunas..."
               sx={{ minWidth: "250px", flexGrow: 1 }}
             />
-            <Button // Button MUI
+            <Button
               variant="contained"
               color="success"
               onClick={exportToExcel}
@@ -723,7 +638,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         </Paper>
 
         {tableLoading ? (
-          <Box // Spinner de carregamento agora é Box MUI
+          <Box
             sx={{
               display: "flex",
               justifyContent: "center",
@@ -732,59 +647,45 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             }}
           >
             <CircularProgress color="primary" />
-            <Typography variant="body1" ml={2}>
-              Carregando dados da tabela...
-            </Typography>
           </Box>
-        ) : Array.isArray(filteredLocalData) &&
-          filteredLocalData.length === 0 ? (
-          <Typography // Alerta de nenhum dado é Typography MUI
-            variant="body1"
-            align="center"
-            color="info.main"
-            sx={{
-              p: 3,
-              border: "1px solid",
-              borderColor: "info.main",
-              borderRadius: 1,
-            }}
-          >
-            Nenhum dado encontrado para os critérios de filtro.
-          </Typography>
         ) : (
           <TableContainer component={Paper} elevation={3}>
-            {" "}
-            {/* Tabela MUI */}
             <Table stickyHeader aria-label="tabela de dados combinados">
               <TableHead>
                 <TableRow>
-                  <TableCell>Termo</TableCell>
-                  <TableCell>Dt Emissão</TableCell>
-                  <TableCell>AWB</TableCell>
-                  <TableCell>Emissão FR</TableCell>
-                  <TableCell>Origem</TableCell>
-                  <TableCell>Destino</TableCell>
-                  <TableCell>Tomador</TableCell>
-                  <TableCell>Destinatário</TableCell>
-                  <TableCell>Voo</TableCell>
-                  <TableCell>NFe</TableCell>
-                  <TableCell>MDFe</TableCell>
-                  <TableCell>Status</TableCell>
+                  {headCells.map((headCell) => (
+                    <TableCell
+                      key={headCell.id}
+                      sortDirection={orderBy === headCell.id ? order : false}
+                    >
+                      {headCell.sortable === false ? (
+                        headCell.label
+                      ) : (
+                        <TableSortLabel
+                          active={orderBy === headCell.id}
+                          direction={orderBy === headCell.id ? order : "asc"}
+                          onClick={(event) =>
+                            handleRequestSort(event, headCell.id)
+                          }
+                        >
+                          {headCell.label}
+                        </TableSortLabel>
+                      )}
+                    </TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {currentItems.map((row, index) => (
                   <TableRow
                     key={index}
-                    className={getRowClassName(row.sefaz_status_situacao)} // Ainda usando classe CSS
+                    className={getRowClassName(row.sefaz_status_situacao)}
                   >
-                    <TableCell component="th" scope="row">
-                      {row.numero_termo || "N/A"}
-                    </TableCell>
+                    <TableCell>{row.numero_termo || "N/A"}</TableCell>
                     <TableCell>{row.data_emissao || "N/A"}</TableCell>
                     <TableCell
                       onClick={() => copyAwbLast8Digits(row.awb)}
-                      sx={{ cursor: "pointer", fontWeight: "bold" }} // Mantém sx styles para td
+                      sx={{ cursor: "pointer", fontWeight: "bold" }}
                     >
                       {row.awb || "N/A"}
                     </TableCell>
@@ -803,9 +704,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                     <TableCell>
                       {row.chave_nfe ? (
                         <Tooltip title={row.chave_nfe}>
-                          {" "}
-                          {/* Tooltip MUI */}
-                          <IconButton // IconButton MUI
+                          <IconButton
                             size="small"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -823,9 +722,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                     <TableCell>
                       {row.chave_mdfe ? (
                         <Tooltip title={row.chave_mdfe}>
-                          {" "}
-                          {/* Tooltip MUI */}
-                          <IconButton // IconButton MUI
+                          <IconButton
                             size="small"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -847,7 +744,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
                 ))}
               </TableBody>
             </Table>
-            <TablePagination // Paginação MUI
+            <TablePagination
               rowsPerPageOptions={[10, 25, 50, 100]}
               component="div"
               count={filteredLocalData.length}
@@ -864,21 +761,10 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         )}
       </TabPanel>
 
-      {/* Conteúdo da Aba "Acompanhamento" */}
       <TabPanel value={selectedTab} index={1}>
         <Paper elevation={3} sx={{ p: 3, mt: 3 }}>
-          {" "}
-          {/* Paper MUI */}
           <Typography variant="h6" component="p" align="center">
             Conteúdo da aba "Acompanhamento" será implementado aqui.
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            align="center"
-            sx={{ mt: 1 }}
-          >
-            (Ex: status de movimentação de AWBs, gráficos, etc.)
           </Typography>
         </Paper>
       </TabPanel>

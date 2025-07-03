@@ -10,8 +10,6 @@ const cors = require('cors');
 
 const {
     initializeDatabase,
-    pool, // <-- Esta variável 'pool' aqui pode estar undefined quando as rotas são definidas.
-    //     Precisamos usar a função getDbPoolInstance() dentro das rotas.
     insertSefazReportData,
     insertFranchiseReportData,
     getSefazReportData,
@@ -23,19 +21,46 @@ const {
     debugLog,
     debugWarn,
     debugError,
-    getDbPoolInstance // <--- Certifique-se de exportar e importar esta função
+    getDbPoolInstance
 } = require('./database');
 
-
 const { processPdfAndSaveData } = require('./services/pdfProcessor');
-
 
 const app = express();
 const port = process.env.PORT || 8080;
 const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
 
+// --- NOVA FUNÇÃO DE RETRY ---
+/**
+ * Tenta executar uma função assíncrona várias vezes em caso de falhas de DNS (EAI_AGAIN).
+ * @param {Function} callbackFn A função assíncrona a ser executada (ex: initializeDatabase).
+ * @param {number} retries Número máximo de tentativas.
+ * @param {number} delay Tempo de espera entre as tentativas em milissegundos.
+ * @returns A promessa resolvida pela função de callback.
+ */
+async function connectWithRetry(callbackFn, retries = 5, delay = 5000) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      // Tenta executar a função original
+      return await callbackFn();
+    } catch (err) {
+      // Verifica se o erro é o de DNS temporário
+      if (err.code === 'EAI_AGAIN') {
+        console.log(`[DB-RETRY] Falha na resolução de DNS para o DB. Tentando novamente em ${delay / 1000}s... (Tentativa ${i}/${retries})`);
+        // Espera um pouco antes da próxima tentativa
+        await new Promise(res => setTimeout(res, delay));
+      } else {
+        // Se for qualquer outro erro, lança-o imediatamente
+        throw err;
+      }
+    }
+  }
+  // Se todas as tentativas falharem, lança um erro final
+  throw new Error(`Não foi possível conectar ao banco de dados após ${retries} tentativas.`);
+}
+// --- FIM DA NOVA FUNÇÃO ---
 
-app.use(cors({
+const corsOptions = {
     origin: function (origin, callback) {
         if (!origin) return callback(null, true);
 
@@ -45,8 +70,7 @@ app.use(cors({
             /^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/,
             /^https?:\/\/localhost(:\d+)?$/,
             /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
-            /^https?:\/\/intranet(:\d+)?$/, // <-- ADICIONE ESTA LINHA
-
+            /^https?:\/\/intranet(:\d+)?$/,
         ];
 
         const isAllowed = allowedIpPatterns.some(pattern => {
@@ -66,7 +90,9 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -81,21 +107,26 @@ const formatDateToDDMMYYYY = (date) => {
     return `${d}/${m}/${y}`;
 };
 
-// --- ESTRUTURA PRINCIPAL DO SERVIDOR: initializeDatabase() é chamado e ENVOLVE TODAS AS ROTAS ---
-initializeDatabase()
-    .then(async () => { // Adicionado 'async' aqui para usar 'await' dentro do .then
-        if (LOG_DEBUG) debugLog('[SERVER-INIT] Banco de dados MySQL inicializado com sucesso.');
+// --- BLOCO DE INICIALIZAÇÃO MODIFICADO ---
+async function startServer() {
+    try {
+        // Agora chamamos a função 'initializeDatabase' através do 'connectWithRetry'
+        await connectWithRetry(initializeDatabase);
+        
+        if (LOG_DEBUG) debugLog('[SERVER-INIT] Conexão com o banco de dados estabelecida com sucesso.');
 
-        // AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS E INICIAR O SERVIDOR EXPRESS
+        // AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS
         const tablesToWaitFor = ['sefaz_report', 'franchise_report', 'logs', 'sefaz_status_termos'];
         const tablesReady = await waitForDatabaseTables(tablesToWaitFor);
 
         if (!tablesReady) {
             debugError('[SERVER-INIT] Falha crítica: As tabelas do banco de dados não ficaram prontas a tempo. Encerrando servidor.');
-            process.exit(1); // Encerrar se as tabelas não estiverem prontas
+            process.exit(1);
         }
 
         // --- DEFINIÇÕES DE ROTAS DO EXPRESS AQUI DENTRO ---
+        // (Todo o seu código de rotas app.get, app.post, etc. permanece aqui, sem alterações)
+        
         app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
 
         app.post('/api/upload-pdf', upload.single('pdf_file'), async (req, res) => {
@@ -140,7 +171,7 @@ initializeDatabase()
 
         app.post('/api/upload-report', upload.single('xlsx_file'), validateXlsx, async (req, res) => {
             const file = req.file;
-            let connection; // <-- GARANTA QUE ESTA LINHA ESTEJA AQUI
+            let connection;
             if (!file) {
                 await insertLog({ action: 'Falha no Upload de XLSX (Arquivo Ausente)', details: {}, success: false });
                 return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado.' });
@@ -173,10 +204,9 @@ initializeDatabase()
 
                 await insertFranchiseReportData(processedData);
 
-                // --- ESTE É O BLOCO CRÍTICO PARA O ERRO 'execute' ---
-                const currentPool = await getDbPoolInstance(); // <-- GARANTA QUE ESTA LINHA ESTEJA AQUI
-                connection = await currentPool.getConnection(); // <-- E ESTA TAMBÉM
-                const [rows] = await connection.execute('SELECT COUNT(*) AS total FROM franchise_report'); // <-- AQUI O ERRO ACONTECIA
+                const currentPool = await getDbPoolInstance();
+                connection = await currentPool.getConnection();
+                const [rows] = await connection.execute('SELECT COUNT(*) AS total FROM franchise_report');
                 const count = rows[0].total;
 
                 const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
@@ -197,7 +227,7 @@ initializeDatabase()
                     message: 'Erro ao processar arquivo: ' + (error.message || 'Erro desconhecido.')
                 });
             } finally {
-                if (connection) { // <-- E ESTE FINALLY COM RELEASE
+                if (connection) {
                     connection.release();
                 }
             }
@@ -255,42 +285,22 @@ initializeDatabase()
                     finalHavingParams.push(`%${formattedAwb}%`);
                 }
                 if (destino && destino.trim() !== '') {
-                    finalHavingClauses.push(`fr.destino = ?`);
-                    finalHavingParams.push(`${destino.toUpperCase().trim()}`);
+                    finalHavingClauses.push(`UPPER(fr.destino) = ?`); // Corrigido para ser exato e case-insensitive
+                    finalHavingParams.push(destino.toUpperCase().trim());
                 }
 
                 const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
                 const havingString = finalHavingClauses.length > 0 ? `HAVING ${finalHavingClauses.join(' AND ')}` : '';
 
                 const query = `
-            SELECT
-                sr.id,
-                sr.data_emissao,
-                sr.chave_mdfe,
-                sr.numero_termo,
-                sr.chave_nfe,
-                sr.numero_cte,
-                sr.numero_nfe,
-                sr.numero_voo,
-                sr.data_registro,
-                sr.awb,
-                fr.chave_cte AS fr_chave_cte,
-                fr.origem AS fr_origem,
-                fr.destino AS fr_destino,
-                fr.tomador AS fr_tomador,
-                fr.notas AS fr_notas,
-                fr.data_emissao AS fr_data_emissao,
-                fr.destinatario AS fr_destinatario,
-                sst.situacao AS sefaz_status_situacao -- NOVO CAMPO AQUI
-            FROM sefaz_report sr
-            LEFT JOIN franchise_report fr
-                ON sr.awb = fr.awb
-            LEFT JOIN sefaz_status_termos sst -- NOVO JOIN AQUI
-                ON sr.numero_termo = sst.numero_termo
-            ${whereString}
-            ${havingString}
-            ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
-        `;
+                    SELECT sr.id, sr.data_emissao, sr.chave_mdfe, sr.numero_termo, sr.chave_nfe, sr.numero_cte, sr.numero_nfe, sr.numero_voo, sr.data_registro, sr.awb, fr.chave_cte AS fr_chave_cte, fr.origem AS fr_origem, fr.destino AS fr_destino, fr.tomador AS fr_tomador, fr.notas AS fr_notas, fr.data_emissao AS fr_data_emissao, fr.destinatario AS fr_destinatario, sst.situacao AS sefaz_status_situacao
+                    FROM sefaz_report sr
+                    LEFT JOIN franchise_report fr ON sr.awb = fr.awb
+                    LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
+                    ${whereString}
+                    ${havingString}
+                    ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
+                `;
 
                 const finalParams = params.concat(finalHavingParams);
 
@@ -309,13 +319,11 @@ initializeDatabase()
             }
         });
 
-
         app.get('/api/awbs-by-destination', async (req, res) => {
             let connection;
             try {
-                // Obtém a instância do pool de conexões
                 const currentPool = await getDbPoolInstance();
-                connection = await currentPool.getConnection(); // <-- Correção aqui
+                connection = await currentPool.getConnection();
                 const query = `
                     SELECT destino, COUNT(awb) AS total_awbs
                     FROM franchise_report
@@ -336,9 +344,8 @@ initializeDatabase()
         app.get('/api/missing-dates', async (req, res) => {
             let connection;
             try {
-                // Obtém a instância do pool de conexões
                 const currentPool = await getDbPoolInstance();
-                connection = await currentPool.getConnection(); // <-- Correção aqui
+                connection = await currentPool.getConnection();
                 const missingDatesByDestination = {};
                 const today = new Date();
                 const thirtyDaysAgo = new Date();
@@ -379,7 +386,7 @@ initializeDatabase()
                 if (connection) connection.release();
             }
         });
-
+        
         function validateXlsx(req, res, next) {
             const file = req.file;
             if (!file || file.mimetype !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
@@ -388,7 +395,7 @@ initializeDatabase()
             }
             next();
         }
-        // --- ROTA PARA RECEBER LOGS DO FRONTEND ---
+        
         app.post('/api/log', async (req, res) => {
             const { action, user_ip, mac_address, user_agent, details, success } = req.body;
             try {
@@ -399,17 +406,12 @@ initializeDatabase()
                 res.status(500).json({ success: false, message: 'Erro ao registrar log.' });
             }
         });
-
-        // --- NOVA ROTA PARA BUSCAR ÚLTIMA DATA DE IMPORTAÇÃO DE FRANCHISE ---
+        
         app.get('/api/last-franchise-import-date', async (req, res) => {
             try {
                 const lastDate = await getLastFranchiseImportDate();
                 if (lastDate) {
-                    const formattedDate = new Date(lastDate).toLocaleString('pt-BR', {
-                        day: '2-digit', month: '2-digit', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit', second: '2-digit',
-                        hour12: false
-                    });
+                    const formattedDate = new Date(lastDate).toLocaleString('pt-BR', { timeZone: 'America/Maceio', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
                     res.status(200).json({ last_update: formattedDate });
                 } else {
                     res.status(200).json({ last_update: 'N/A' });
@@ -419,8 +421,7 @@ initializeDatabase()
                 res.status(500).json({ success: false, message: 'Erro ao buscar data de atualização.' });
             }
         });
-
-        // --- ROTA PARA UPLOAD E PROCESSAMENTO DE STATUS DE TERMOS ---
+        
         app.post('/api/upload-status-termos', async (req, res) => {
             const { pasted_data } = req.body;
 
@@ -437,12 +438,8 @@ initializeDatabase()
                     await insertLog({ action: 'Falha na Importação de Status (Sem Dados Válidos)', details: { data: pasted_data }, success: false });
                     return res.status(400).json({ success: false, message: 'Nenhum dado válido para processar.' });
                 }
-
-                if (LOG_DEBUG) debugLog('Pasted data raw:', pasted_data);
-                if (LOG_DEBUG) debugLog('Parsed lines:', lines);
-
-                const dataRows = lines.slice(1); // Ignorar linha de cabeçalho
-
+                
+                const dataRows = lines.slice(1);
                 const parsedData = [];
                 for (const rowText of dataRows) {
                     const rowPattern = /^(\S+)\s+(\S+)\s+(.+?)\s+(R\$?\s*[0-9.,]+)/;
@@ -454,26 +451,12 @@ initializeDatabase()
                         continue;
                     }
 
-                    if (LOG_DEBUG) debugLog(`Processing row: "${rowText}"`);
-                    if (LOG_DEBUG) debugLog('Row matches (regex extraction):', match);
-
                     const numero_termo = match[1].trim();
                     const data_status = match[2].trim();
                     const situacao_bruta = match[3].trim();
                     const valor_bruto = match[4].trim();
-
-                    const valor_final_para_db = valor_bruto
-                        ? parseFloat(valor_bruto.replace(/[^\d,.]/g, '').replace(',', '.'))
-                        : null;
-
+                    const valor_final_para_db = valor_bruto ? parseFloat(valor_bruto.replace(/[^\d,.]/g, '').replace(',', '.')) : null;
                     const situacao_limpa = situacao_bruta.replace(/R\$?\s*[0-9.,]+/, '').trim();
-
-
-                    if (LOG_DEBUG) debugLog(`Extracted numero_termo: "${numero_termo}"`);
-                    if (LOG_DEBUG) debugLog(`Extracted data_status: "${data_status}"`);
-                    if (LOG_DEBUG) debugLog(`Extracted situacao_limpa: "${situacao_limpa}"`);
-                    if (LOG_DEBUG) debugLog(`Extracted valor_bruto: "${valor_bruto}"`);
-                    if (LOG_DEBUG) debugLog(`Extracted valor_final_para_db: ${valor_final_para_db}`);
 
                     parsedData.push([numero_termo, data_status, situacao_limpa, valor_final_para_db]);
                 }
@@ -483,17 +466,9 @@ initializeDatabase()
                     return res.status(400).json({ success: false, message: 'Nenhum dado válido pôde ser extraído dos dados colados.' });
                 }
 
-                if (LOG_DEBUG) debugLog('Parsed data before DB insertion:', parsedData);
-
                 const result = await insertOrUpdateSefazStatusTermos(parsedData);
 
-                await insertLog({
-                    action: 'Importação de Status de Termos Concluída', details: {
-                        registrosProcessados: result.totalProcessed,
-                        inseridos: result.insertedCount,
-                        atualizados: result.updatedCount
-                    }, success: true
-                });
+                await insertLog({ action: 'Importação de Status de Termos Concluída', details: { registrosProcessados: result.totalProcessed, inseridos: result.insertedCount, atualizados: result.updatedCount }, success: true });
 
                 res.status(200).json({
                     success: true,
@@ -510,13 +485,19 @@ initializeDatabase()
             }
         });
 
+        // --- Fim das Rotas ---
 
         app.listen(port, '0.0.0.0', () => {
             if (LOG_DEBUG) debugLog(`Backend rodando em http://0.0.0.0:${port}`);
             if (LOG_DEBUG) debugLog(`Modo de Depuração (LOG_DEBUG_MODE) está ATIVO.`);
         });
-    })
-    .catch(err => {
-        debugError('[SERVER-INIT] Falha crítica ao iniciar o servidor devido a erro no DB:', err);
+
+    } catch (error) {
+        debugError('[SERVER-INIT] Falha crítica ao iniciar o servidor após múltiplas tentativas:', error);
         process.exit(1);
-    });
+    }
+}
+// --- FIM DO BLOCO DE INICIALIZAÇÃO ---
+
+// Inicia o servidor
+startServer();

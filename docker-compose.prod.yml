@@ -1,7 +1,9 @@
 # docker-compose.prod.yml
+version: '3.8'
 
 services:
-  mysql_db_prod: # Renomeado para evitar conflito de nome de serviço
+  # Nomes de serviço simplificados
+  mysql_db:
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
     environment:
@@ -11,11 +13,11 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       TZ: America/Maceio
     volumes:
-      - mysql_data_prod:/var/lib/mysql # Volume de produção
+      - mysql_data_prod:/var/lib/mysql
     ports:
-      - "${DB_PORT_PROD}:3306" # Usa a porta do .env.prod
+      - "${DB_PORT_PROD}:3306"
     networks:
-      - app-network-prod # Rede de produção
+      - app-network-prod
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -23,40 +25,40 @@ services:
       retries: 5
       start_period: 30s
 
-  backend_prod: # Renomeado
+  backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8080" # A porta interna não precisa mudar
+      - "8080"
     environment:
       PORT: 8080
-      DB_HOST: mysql_db_prod # Aponta para o BD de produção
+      DB_HOST: mysql_db # Aponta para o nome de serviço correto
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
     depends_on:
-      mysql_db_prod:
+      mysql_db:
         condition: service_healthy
     networks:
       - app-network-prod
 
-  frontend_prod: # Renomeado
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - "${HOST_PORT_HTTP_PROD}:80" # Usa a porta do .env.prod (ex: 80)
+      - "${HOST_PORT_HTTP_PROD}:80"
     environment:
       VITE_BACKEND_URL: /api
     depends_on:
-      - backend_prod
+      - backend
     networks:
       - app-network-prod
 
 networks:
-  app-network-prod: # Rede de produção
+  app-network-prod:
     driver: bridge
 
 volumes:
-  mysql_data_prod: # Volume de produção
+  mysql_data_prod:

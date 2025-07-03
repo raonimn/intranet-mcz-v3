@@ -1,7 +1,9 @@
 # docker-compose.test.yml
+version: '3.8'
 
 services:
-  mysql_db_test: # Nome único para o serviço de BD de teste
+  # Nomes de serviço simplificados (iguais aos de prod)
+  mysql_db:
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
     environment:
@@ -11,11 +13,11 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       TZ: America/Maceio
     volumes:
-      - mysql_data_test:/var/lib/mysql # Volume isolado para teste
+      - mysql_data_test:/var/lib/mysql # O isolamento é feito pelo volume
     ports:
-      - "${DB_PORT_TEST}:3306" # Usa a porta do .env.test (ex: 3307)
+      - "${DB_PORT_TEST}:3306" # E pela porta
     networks:
-      - app-network-test # Rede isolada para teste
+      - app-network-test # E pela rede
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -23,7 +25,7 @@ services:
       retries: 5
       start_period: 30s
 
-  backend_test: # Nome único
+  backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -31,32 +33,32 @@ services:
       - "8080"
     environment:
       PORT: 8080
-      DB_HOST: mysql_db_test # Aponta para o BD de teste
+      DB_HOST: mysql_db # Aponta para o nome de serviço correto
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
     depends_on:
-      mysql_db_test:
+      mysql_db:
         condition: service_healthy
     networks:
       - app-network-test
 
-  frontend_test: # Nome único
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - "${HOST_PORT_HTTP_TEST}:80" # Usa a porta do .env.test (ex: 8081)
+      - "${HOST_PORT_HTTP_TEST}:80"
     environment:
       VITE_BACKEND_URL: /api
     depends_on:
-      - backend_test
+      - backend
     networks:
       - app-network-test
 
 networks:
-  app-network-test: # Rede isolada para teste
+  app-network-test:
     driver: bridge
 
 volumes:
-  mysql_data_test: # Volume isolado para teste
+  mysql_data_test:

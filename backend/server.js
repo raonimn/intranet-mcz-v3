@@ -225,7 +225,7 @@ initializeDatabase()
                     params.push(dataTermo.trim());
                 } else {
                     const today = new Date();
-                    const twoDaysAgo = new Date(); // Ajustado para 2 dias atrás
+                    const twoDaysAgo = new Date();
                     twoDaysAgo.setDate(today.getDate() - 2);
 
                     const todayFormattedForQuery = formatDateToDDMMYYYY(today);
@@ -244,24 +244,22 @@ initializeDatabase()
                 let finalHavingClauses = [];
                 let finalHavingParams = [];
 
-                // AQUI ESTAMOS FILTRANDO PELO CAMPO AWB DA SEFAZ_REPORT
                 if (awb && awb.trim() !== '') {
                     let formattedAwb = awb.trim();
                     if (!formattedAwb.startsWith('577')) {
                         formattedAwb = `577${formattedAwb}`;
                     }
-                    finalHavingClauses.push(`sd.awb LIKE ?`); // <--- USANDO sd.awb
+                    finalHavingClauses.push(`sr.awb LIKE ?`);
                     finalHavingParams.push(`%${formattedAwb}%`);
                 }
                 if (destino && destino.trim() !== '') {
-                    finalHavingClauses.push(`fr.destino LIKE ?`); // <--- USANDO fr.destino
+                    finalHavingClauses.push(`fr.destino LIKE ?`);
                     finalHavingParams.push(`%${destino.toUpperCase().trim()}%`);
                 }
 
                 const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
                 const havingString = finalHavingClauses.length > 0 ? `HAVING ${finalHavingClauses.join(' AND ')}` : '';
 
-                // --- QUERY SIMPLIFICADA USANDO O NOVO CAMPO SR.AWB ---
                 const query = `
             SELECT
                 sr.id,
@@ -273,17 +271,20 @@ initializeDatabase()
                 sr.numero_nfe,
                 sr.numero_voo,
                 sr.data_registro,
-                sr.awb, -- PEGA O AWB DIRETAMENTE DA SEFAZ_REPORT
+                sr.awb,
                 fr.chave_cte AS fr_chave_cte,
                 fr.origem AS fr_origem,
                 fr.destino AS fr_destino,
                 fr.tomador AS fr_tomador,
                 fr.notas AS fr_notas,
                 fr.data_emissao AS fr_data_emissao,
-                fr.destinatario AS fr_destinatario
+                fr.destinatario AS fr_destinatario,
+                sst.situacao AS sefaz_status_situacao -- NOVO CAMPO AQUI
             FROM sefaz_report sr
             LEFT JOIN franchise_report fr
-                ON sr.awb = fr.awb -- JOIN SIMPLIFICADO PELO AWB
+                ON sr.awb = fr.awb
+            LEFT JOIN sefaz_status_termos sst -- NOVO JOIN AQUI
+                ON sr.numero_termo = sst.numero_termo
             ${whereString}
             ${havingString}
             ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
@@ -291,8 +292,8 @@ initializeDatabase()
 
                 const finalParams = params.concat(finalHavingParams);
 
-                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data (Simplificada):', query);
-                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params Combined Data (Simplificada):', finalParams);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data (Simplificada com Status):', query);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params Combined Data (Simplificada com Status):', finalParams);
 
                 const [rows] = await connection.execute(query, finalParams);
                 res.status(200).json(rows);

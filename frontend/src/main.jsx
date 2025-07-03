@@ -1,21 +1,20 @@
 // frontend/src/main.jsx
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
-import './App.css';
-import 'bootstrap/dist/js/bootstrap.bundle.min.js';
-import 'bootstrap/dist/css/bootstrap.min.css';
+import './index.css';
+import 'bootstrap/dist/css/bootstrap.min.css'; // Garantir que o CSS do Bootstrap seja importado
 
-// Importações para MUI DatePicker
+// --- IMPORTS NECESSÁRIOS PARA O MUI X DATE PICKERS ---
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { ptBR } from 'date-fns/locale'; // Para localização em português
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-        {/* Envolver App com LocalizationProvider para o DatePicker do MUI */}
-        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ptBR}>
-            <App />
-        </LocalizationProvider>
-    </React.StrictMode>,
+  <React.StrictMode>
+    {/* Envolvemos toda a aplicação com o LocalizationProvider */}
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <App />
+    </LocalizationProvider>
+  </React.StrictMode>,
 );

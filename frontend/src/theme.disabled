@@ -1,0 +1,74 @@
+// frontend/src/theme.js
+import { createTheme } from '@mui/material/styles';
+
+const mczBlue = '#14335B'; // Azul escuro da sua logo
+const mczLightBlue = '#20A7DC'; // Azul claro da sua logo
+const mczMediumBlue = '#136AB2'; // Azul médio da sua logo
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: mczBlue, // Usar o azul escuro da logo como cor primária da aplicação
+      light: mczMediumBlue,
+      dark: '#0e233d', // Um azul ainda mais escuro para fundos da Navbar
+      contrastText: '#fff', // Cor do texto para contraste com a cor primária
+    },
+    secondary: {
+      main: mczLightBlue, // O azul claro pode ser uma cor secundária
+      contrastText: '#fff',
+    },
+    error: {
+      main: '#f44336', // Vermelho padrão
+    },
+    warning: {
+      main: '#ff9800', // Laranja padrão
+    },
+    info: {
+      main: '#2196f3', // Azul info padrão
+    },
+    success: {
+      main: '#4caf50', // Verde padrão
+    },
+    background: {
+      default: '#f0f2f5', // Um cinza bem claro para o fundo geral
+      paper: '#fff', // Branco para Paper, Cards, etc.
+    },
+  },
+  typography: {
+    fontFamily: [
+      'Roboto',
+      '"Helvetica Neue"',
+      'Arial',
+      'sans-serif',
+    ].join(','),
+  },
+  components: {
+    MuiAppBar: {
+      styleOverrides: {
+        colorPrimary: {
+          backgroundColor: '#0e233d', // Um azul muito escuro para a Navbar
+          color: '#fff', // Cor do texto na Navbar
+        },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          color: mczBlue,
+          '&.Mui-selected': {
+            color: mczBlue,
+          },
+        },
+      },
+    },
+    MuiTabs: {
+      styleOverrides: {
+        indicator: {
+          backgroundColor: mczBlue,
+        },
+      },
+    },
+  },
+});
+
+export default theme;

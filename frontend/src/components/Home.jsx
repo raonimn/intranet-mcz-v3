@@ -1,15 +1,21 @@
 // frontend/src/components/Home.jsx
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import {
+    Box,
+    Typography,
+} from '@mui/material';
 
 function Home() {
     return (
-        <div className="container">
-            <div className="header">
-                <h1 className='mt-4'>Intranet MCZ</h1>
-            </div>
-        </div>
+        <Box sx={{ p: 4, textAlign: 'center' }}>
+            <Typography variant="h3" component="h1" sx={{ mt: 4 }}>
+                Bem-vindo à Intranet da MCZ Express
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
+                O Portal interno de ferramentas e informações.
+            </Typography>
+        </Box>
     );
 }
 

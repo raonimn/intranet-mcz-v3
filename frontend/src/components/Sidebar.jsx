@@ -1,16 +1,26 @@
 // frontend/src/components/Sidebar.jsx
-import React, { useState, useEffect } from 'react';
-import { Dropdown, Form, Button } from 'react-bootstrap';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css'; // Estilos do datepicker
+import React, { useState, useEffect, useCallback } from 'react';
+import { Dropdown, Form, Button as BSButton } from 'react-bootstrap';
+// import DatePicker from 'react-datepicker'; // <-- REMOVER ESTE IMPORT
+// import 'react-datepicker/dist/react-datepicker.css'; // <-- REMOVER ESTE IMPORT
+
+// --- IMPORTS DO MUI ---
+import {
+    TextField,
+    Button,
+    Box,
+    Typography,
+} from '@mui/material';
+// --- NOVO IMPORT PARA O DESKTOP DATE PICKER DO MUI X ---
+import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
+// Importar dayjs para trabalhar com as datas do MUI X DatePicker
+import dayjs from 'dayjs';
 
 
 const formatDateToDDMMYYYY = (date) => {
+    // Agora o date será um objeto Dayjs, então precisamos formatá-lo
     if (!date) return '';
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+    return dayjs(date).format('DD/MM/YYYY');
 };
 
 function Sidebar({ isOpen, toggleSidebar, onFilterChange, onImportClick }) {
@@ -18,46 +28,40 @@ function Sidebar({ isOpen, toggleSidebar, onFilterChange, onImportClick }) {
     const [filterTermo, setFilterTermo] = useState('');
     const [filterDestino, setFilterDestino] = useState('');
     const [filterVoo, setFilterVoo] = useState('');
-    const [filterDataTermo, setFilterDataTermo] = useState(null); // Usar null para o DatePicker
+    // Inicializar com dayjs(null) ou null, dependendo do comportamento desejado
+    const [filterDataTermo, setFilterDataTermo] = useState(null);
 
-    // Efeito para redefinir os filtros quando o sidebar é fechado
-    // ou se necessário para limpar o estado de filtros
     useEffect(() => {
         if (!isOpen) {
-            // Se você quiser resetar os filtros ao fechar o sidebar
-            // setFilterAwb('');
-            // setFilterTermo('');
-            // setFilterDestino('');
-            // setFilterVoo('');
-            // setFilterDataTermo(null);
+            // Lógica de reset comentada
         }
     }, [isOpen]);
 
-    const handleFilterSubmit = (e) => {
+    const handleFilterSubmit = useCallback((e) => {
         e.preventDefault();
-        // Construir o objeto de filtros a ser passado para o componente pai
         const filters = {
             awb: filterAwb.trim(),
             termo: filterTermo.trim(),
             destino: filterDestino.trim(),
             voo: filterVoo.trim(),
+            // Formatar a data ao enviar
             dataTermo: filterDataTermo ? formatDateToDDMMYYYY(filterDataTermo) : '',
         };
         onFilterChange(filters);
-    };
+    }, [filterAwb, filterTermo, filterDestino, filterVoo, filterDataTermo, onFilterChange]);
 
     return (
-        <div className={`sidebar ${isOpen ? 'active' : ''}`}>
-            <Button variant="link" className="sidebar-toggle-button d-lg-none" onClick={toggleSidebar}>
-                &times; {/* Ícone de fechar para dispositivos menores */}
-            </Button>
-            <div className="sidebar-header">
-                <h3>Menu Principal</h3>
-            </div>
+        <Box className={`sidebar ${isOpen ? 'active' : ''}`} sx={{ p: 2, height: '100%', overflowY: 'auto' }}>
+            <BSButton variant="link" className="sidebar-toggle-button d-lg-none" onClick={toggleSidebar}>
+                &times;
+            </BSButton>
+            <Typography variant="h5" sx={{ mb: 2 }}>
+                Menu Principal
+            </Typography>
             <ul className="list-unstyled components">
                 <li>
                     <Dropdown>
-                        <Dropdown.Toggle variant="secondary" id="dropdown-tools">
+                        <Dropdown.Toggle as={BSButton} variant="secondary" id="dropdown-tools" className="w-100">
                             Ferramentas
                         </Dropdown.Toggle>
 
@@ -77,67 +81,78 @@ function Sidebar({ isOpen, toggleSidebar, onFilterChange, onImportClick }) {
                         </Dropdown.Menu>
                     </Dropdown>
                 </li>
-                <li className="sidebar-separator"></li> {/* Separador visual */}
+                <li className="sidebar-separator"></li>
                 <li>
-                    <h5>Pesquisa:</h5>
+                    <Typography variant="h6" sx={{ mb: 1 }}>
+                        Pesquisa:
+                    </Typography>
                     <Form onSubmit={handleFilterSubmit}>
                         <Form.Group className="mb-2">
                             <Form.Label>AWB:</Form.Label>
-                            <Form.Control
-                                type="text"
+                            <TextField
+                                fullWidth
+                                size="small"
                                 placeholder="Digite o AWB"
                                 value={filterAwb}
-                                onChange={(e) => setFilterAwb(e.target.value.slice(0, 8))} // Limita a 8 caracteres
-                                maxLength="8"
+                                onChange={(e) => setFilterAwb(e.target.value.slice(0, 8))}
+                                inputProps={{ maxLength: 8 }}
                             />
                         </Form.Group>
                         <Form.Group className="mb-2">
                             <Form.Label>Termo:</Form.Label>
-                            <Form.Control
-                                type="text"
+                            <TextField
+                                fullWidth
+                                size="small"
                                 placeholder="Digite o Termo"
                                 value={filterTermo}
-                                onChange={(e) => setFilterTermo(e.target.value.slice(0, 8))} // Limita a 8 caracteres
-                                maxLength="8"
+                                onChange={(e) => setFilterTermo(e.target.value.slice(0, 8))}
+                                inputProps={{ maxLength: 8 }}
                             />
                         </Form.Group>
                         <Form.Group className="mb-2">
                             <Form.Label>Destino:</Form.Label>
-                            <Form.Control
-                                type="text"
+                            <TextField
+                                fullWidth
+                                size="small"
                                 placeholder="Digite o Destino"
                                 value={filterDestino}
-                                onChange={(e) => setFilterDestino(e.target.value.slice(0, 6))} // Limita a 6 caracteres
-                                maxLength="6"
+                                onChange={(e) => setFilterDestino(e.target.value.slice(0, 6))}
+                                inputProps={{ maxLength: 6 }}
                             />
                         </Form.Group>
                         <Form.Group className="mb-2">
                             <Form.Label>Voo:</Form.Label>
-                            <Form.Control
-                                type="text"
+                            <TextField
+                                fullWidth
+                                size="small"
                                 placeholder="Digite o Voo"
                                 value={filterVoo}
-                                onChange={(e) => setFilterVoo(e.target.value.slice(0, 6))} // Limita a 6 caracteres
-                                maxLength="6"
+                                onChange={(e) => setFilterVoo(e.target.value.slice(0, 6))}
+                                inputProps={{ maxLength: 6 }}
                             />
                         </Form.Group>
                         <Form.Group className="mb-3">
                             <Form.Label>Data do termo:</Form.Label>
-                            <DatePicker
-                                selected={filterDataTermo}
-                                onChange={(date) => setFilterDataTermo(date)}
-                                dateFormat="dd/MM/yyyy"
-                                className="form-control"
-                                placeholderText="Selecione a data"
+                            {/* --- SUBSTITUIR react-datepicker POR DesktopDatePicker do MUI X --- */}
+                            <DesktopDatePicker
+                                label="Selecione a data"
+                                inputFormat="DD/MM/YYYY" // O formato de exibição
+                                value={filterDataTermo}
+                                onChange={(newValue) => {
+                                    setFilterDataTermo(newValue);
+                                }}
+                                renderInput={(params) => (
+                                    <TextField {...params} fullWidth size="small" />
+                                )}
                             />
                         </Form.Group>
-                        <Button variant="primary" type="submit" className="w-100">
+                        <Button variant="contained" color="primary" type="submit" fullWidth>
                             Aplicar Filtros
                         </Button>
                     </Form>
                 </li>
             </ul>
-        </div>
+        </Box>
     );
 }
 

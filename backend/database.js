@@ -45,8 +45,6 @@ async function getDbPoolInstance() {
 }
 
 
-// --- TODAS AS OUTRAS FUNÇÕES DEVEM VIR DEPOIS DE getDbPoolInstance ---
-
 async function initializeDatabase() {
   debugLog('initializeDatabase: Início da função.');
   let connection;
@@ -56,7 +54,6 @@ async function initializeDatabase() {
     connection = await currentPool.getConnection();
     debugLog('initializeDatabase: Conexão para verificação/criação de tabelas estabelecida!');
 
-    // ALTERAÇÃO AQUI: Adicionar coluna 'awb' em sefaz_report
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS sefaz_report (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -67,19 +64,11 @@ async function initializeDatabase() {
                 numero_cte VARCHAR(255),
                 numero_nfe VARCHAR(255),
                 numero_voo VARCHAR(255),
-                awb VARCHAR(255), -- NOVA COLUNA AQUI
+                awb VARCHAR(255),
                 data_registro DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         `);
-    debugLog('initializeDatabase: Tabela sefaz_report verificada/criada (com coluna awb).');
-
-    // Se a coluna 'awb' já existir, mas você adicionou isso depois,
-    // o MySQL ignorará o `CREATE TABLE IF NOT EXISTS`.
-    // Para adicionar a coluna a uma tabela existente (apenas uma vez):
-    // Você pode executar manualmente no seu DB client:
-    // ALTER TABLE sefaz_report ADD COLUMN awb VARCHAR(255);
-    // Ou adicionar a lógica de alteração aqui, mas isso é mais complexo para um script de inicialização.
-    // Para o nosso propósito de desenvolvimento, a criação acima já considera a coluna.
+    debugLog('initializeDatabase: Tabela sefaz_report verificada/criada.');
 
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS franchise_report (
@@ -121,10 +110,45 @@ async function initializeDatabase() {
         `);
     debugLog('initializeDatabase: Tabela sefaz_status_termos verificada/criada.');
 
+    // --- NOVA TABELA AQUI: azul_movimentacao_awb ---
+    await connection.execute(`
+            CREATE TABLE IF NOT EXISTS azul_movimentacao_awb (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                awb VARCHAR(255) NOT NULL,
+                status_atual VARCHAR(255) NOT NULL,
+                data_status_atual DATETIME DEFAULT CURRENT_TIMESTAMP,
+                acao TEXT,
+                observacao TEXT,
+                email_enviado BOOLEAN DEFAULT FALSE, -- NOVO CAMPO AQUI
+                data_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_awb (awb)
+            );
+        `);
+    debugLog('initializeDatabase: Tabela azul_movimentacao_awb verificada/criada.');
+    // --- FIM DA NOVA TABELA ---
+
+    // --- VERIFICAÇÃO DA EXISTÊNCIA DO TRIGGER ---
+    debugLog('initializeDatabase: Verificando a existência do trigger trg_sefaz_report_after_awb_update.');
+    const [triggerRows] = await connection.query(`
+        SHOW TRIGGERS LIKE 'trg_sefaz_report_after_awb_update';
+    `);
+
+    if (triggerRows.length === 0) {
+      debugWarn(
+        '[DB-WARNING] O TRIGGER "trg_sefaz_report_after_awb_update" NÃO FOI ENCONTRADO NO BANCO DE DADOS.'
+      );
+      debugWarn(
+        '[DB-WARNING] Por favor, execute manualmente os comandos SQL contidos no arquivo backend/database.TOEXEC'
+      );
+    } else {
+      debugLog('initializeDatabase: Trigger trg_sefaz_report_after_awb_update encontrado e ativo.');
+    }
+    // --- FIM DA VERIFICAÇÃO DO TRIGGER ---
+
     debugLog('initializeDatabase: Pool de conexões MySQL testado e tabelas verificadas com sucesso!');
 
   } catch (error) {
-    debugError("initializeDatabase: Erro ao criar tabelas no banco de dados:", error);
+    debugError("initializeDatabase: Erro ao criar tabelas/verificar triggers no banco de dados:", error);
     throw error;
   } finally {
     if (connection) {
@@ -133,6 +157,8 @@ async function initializeDatabase() {
     debugLog('initializeDatabase: Fim da função.');
   }
 }
+
+
 
 
 async function checkTableExistence(tableName) {

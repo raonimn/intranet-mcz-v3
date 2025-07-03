@@ -1,0 +1,31 @@
+-- backend/database.TOEXEC
+
+-- Este arquivo contém comandos SQL que requerem privilégios especiais
+-- ou que são executados manualmente fora do processo de inicialização da aplicação.
+-- Ex: Criação/Atualização de Triggers, Stored Procedures, Views complexas.
+
+-- --------------------------------------------------------------------------
+-- Trigger para azul_movimentacao_awb
+-- Cria um registro inicial na tabela azul_movimentacao_awb
+-- sempre que um AWB é atribuído pela primeira vez no sefaz_report.
+-- --------------------------------------------------------------------------
+
+DROP TRIGGER IF EXISTS trg_sefaz_report_after_awb_update;
+
+DELIMITER //
+
+CREATE TRIGGER trg_sefaz_report_after_awb_update
+AFTER UPDATE ON sefaz_report
+FOR EACH ROW
+BEGIN
+    IF OLD.awb IS NULL AND NEW.awb IS NOT NULL AND NEW.awb != '' THEN
+        INSERT INTO azul_movimentacao_awb (awb, status_atual, data_status_atual, acao, observacao, email_enviado)
+        VALUES (NEW.awb, 'Pendente', NOW(), 'Pendente', '', FALSE);
+    END IF;
+END //
+
+DELIMITER ;
+
+-- --------------------------------------------------------------------------
+-- Adicione outros comandos SQL manuais abaixo, se necessário.
+-- --------------------------------------------------------------------------

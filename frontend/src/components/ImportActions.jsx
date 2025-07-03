@@ -1,24 +1,21 @@
 // frontend/src/components/ImportActions.jsx
-
 import React, {
   useState,
   useRef,
   forwardRef,
   useImperativeHandle,
+  useCallback,
 } from "react";
 import axios from "axios";
-import { Modal, Button, Form, Row, Col } from "react-bootstrap";
+import { Modal, Button as BSButton, Form, Row, Col } from "react-bootstrap"; // Button como BSButton para não conflitar
 
-import { DatePicker as MuiDatePicker } from "@mui/x-date-pickers/DatePicker"; // Mantido caso seja usado futuramente para outros inputs de data
-import { TextField, InputAdornment } from "@mui/material";
+import { TextField, InputAdornment, Button, Box } from "@mui/material"; // Button do MUI
 
-// Importar o novo modal
-import ImportStatusTermosModal from "./ImportStatusTermosModal"; // <--- NOVO IMPORT
+import ImportStatusTermosModal from "./ImportStatusTermosModal";
 
 const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
   const [showFranchiseModal, setShowFranchiseModal] = useState(false);
   const [showTermosModal, setShowTermosModal] = useState(false);
-  // --- NOVO ESTADO PARA O MODAL DE STATUS DE TERMOS ---
   const [showStatusTermosModal, setShowStatusTermosModal] = useState(false);
 
 
@@ -34,19 +31,18 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
   useImperativeHandle(ref, () => ({
     showFranchiseModal: () => setShowFranchiseModal(true),
     showTermosModal: () => setShowTermosModal(true),
-    // --- EXPOR FUNÇÃO PARA ABRIR O NOVO MODAL ---
     showStatusTermosModal: () => setShowStatusTermosModal(true),
   }));
 
-  const handleCloseFranchiseModal = () => {
+  const handleCloseFranchiseModal = useCallback(() => {
     setShowFranchiseModal(false);
     setFranchiseFile(null);
     if (franchiseFileInputRef.current) franchiseFileInputRef.current.value = "";
-  };
+  }, []);
 
-  const handleFranchiseFileChange = (e) => setFranchiseFile(e.target.files[0]);
+  const handleFranchiseFileChange = useCallback((e) => setFranchiseFile(e.target.files[0]), []);
 
-  const handleFranchiseUpload = async (e) => {
+  const handleFranchiseUpload = useCallback(async (e) => {
     e.preventDefault();
     if (!franchiseFile) {
       showToast("Erro", "Por favor, selecione um arquivo XLSX.", "danger");
@@ -79,27 +75,27 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
           "Erro ao processar o arquivo Franchise Report.",
         "danger"
       );
-      console.error("Erro no upload Franchise:", error);
+      console.error("[ImportActions] Erro no upload Franchise:", error);
     } finally {
       onProcessingChange(false, "franchise");
     }
-  };
+  }, [franchiseFile, onProcessingChange, handleCloseFranchiseModal, showToast, BACKEND_URL]);
 
-  const handleCloseTermosModal = () => {
+  const handleCloseTermosModal = useCallback(() => {
     setShowTermosModal(false);
     setTermosFile(null);
     setNumeroVooInput("");
     if (termosFileInputRef.current) termosFileInputRef.current.value = "";
-  };
+  }, []);
 
-  const handleTermosFileChange = (e) => setTermosFile(e.target.files[0]);
+  const handleTermosFileChange = useCallback((e) => setTermosFile(e.target.files[0]), []);
 
-  const handleNumeroVooInputChange = (e) => {
+  const handleNumeroVooInputChange = useCallback((e) => {
     const value = e.target.value.replace(/\D/g, "");
     setNumeroVooInput(value.slice(0, 4));
-  };
+  }, []);
 
-  const handleTermosUpload = async (e) => {
+  const handleTermosUpload = useCallback(async (e) => {
     e.preventDefault();
     if (!termosFile) {
       showToast("Erro", "Por favor, selecione um arquivo PDF.", "danger");
@@ -144,29 +140,22 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
           "Erro ao processar o arquivo de Termos.",
         "danger"
       );
-      console.error("Erro no upload Termos:", error);
+      console.error("[ImportActions] Erro no upload Termos:", error);
       onProcessingChange(false, "termos");
     }
-  };
+  }, [termosFile, numeroVooInput, onProcessingChange, handleCloseTermosModal, showToast, BACKEND_URL]);
 
-  // --- FUNÇÕES DE CONTROLE PARA O NOVO MODAL DE STATUS DE TERMOS ---
-  const handleCloseStatusTermosModal = () => setShowStatusTermosModal(false);
-  const handleStatusTermosImportSuccess = () => {
+  const handleCloseStatusTermosModal = useCallback(() => setShowStatusTermosModal(false), []);
+
+  const handleStatusTermosImportSuccess = useCallback(() => {
     showToast("Sucesso", "Status de termos atualizados com sucesso!", "success");
-    // Você pode chamar onProcessingChange(false) aqui se quiser que o spinner geral pare,
-    // ou apenas showToast, dependendo da sua UX.
-    // E também disparar um re-fetch de dados combinados se o status for relevante para a tabela principal.
-    onProcessingChange(false, 'statusTermos'); // Parar o processamento e acionar re-fetch de dados
-  };
-
+    onProcessingChange(false, "statusTermos");
+  }, [showToast, onProcessingChange]);
 
   return (
-    <div className="d-flex justify-content-center mb-4">
-      <Modal
-        show={showFranchiseModal}
-        onHide={handleCloseFranchiseModal}
-        centered
-      >
+    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
+      {/* Modal Franchise Report */}
+      <Modal show={showFranchiseModal} onHide={handleCloseFranchiseModal} centered>
         <Modal.Header className="px-4" closeButton>
           <Modal.Title className="ms-auto">
             Importar Franchise Report (SK)
@@ -186,13 +175,14 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
                 required
               />
             </Form.Group>
-            <Button variant="primary" type="submit" className="w-100">
+            <Button variant="contained" color="primary" type="submit" fullWidth>
               Upload
             </Button>
           </Form>
         </Modal.Body>
       </Modal>
 
+      {/* Modal Termos (SEFAZ-AL) */}
       <Modal show={showTermosModal} onHide={handleCloseTermosModal} centered>
         <Modal.Header className="px-4" closeButton>
           <Modal.Title className="ms-auto">
@@ -241,24 +231,21 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
               />
             </Form.Group>
 
-            <Button variant="primary" type="submit" className="w-100">
+            <Button variant="contained" color="primary" type="submit" fullWidth>
               Upload
             </Button>
           </Form>
         </Modal.Body>
       </Modal>
 
-      {/* --- INCLUIR O NOVO MODAL AQUI --- */}
+      {/* Modal ImportStatusTermosModal */}
       <ImportStatusTermosModal
         show={showStatusTermosModal}
         handleClose={handleCloseStatusTermosModal}
         showToast={showToast}
-        onImportSuccess={() => {
-            handleStatusTermosImportSuccess();
-            onProcessingChange(false, "statusTermos"); // Parar o processamento principal
-        }}
+        onImportSuccess={handleStatusTermosImportSuccess}
       />
-    </div>
+    </Box>
   );
 });
 

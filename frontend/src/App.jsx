@@ -4,10 +4,9 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import CombinedData from "./components/CombinedData";
 import ImportStatusTermosModal from "./components/ImportStatusTermosModal";
-// REMOVER COMPLETAMENTE ESTA LINHA:
-// import ExtractedTermDataModal from "./components/ExtractedTermDataModal"; // Já estava comentado, certifique-se de que a linha não existe
+import NotificationToast from "./components/NotificationToast"; // <-- 1. IMPORTAR O NOVO COMPONENTE
 
-// MUI Imports (mantidos)
+// MUI Imports
 import Drawer from "@mui/material/Drawer";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
@@ -22,11 +21,9 @@ import Button from "@mui/material/Button";
 import Tooltip from "@mui/material/Tooltip";
 import Dropdown from "react-bootstrap/Dropdown";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import Toast from "react-bootstrap/Toast";
-import ToastContainer from "react-bootstrap/ToastContainer";
+import ReplayIcon from "@mui/icons-material/Replay"; // Ícone para o botão de reset
 
-
-// Icons (mantidos)
+// Icons
 import MenuIcon from "@mui/icons-material/Menu";
 import FilterAltIcon from "@mui/icons-material/FilterAlt";
 import SearchIcon from "@mui/icons-material/Search";
@@ -34,15 +31,14 @@ import CloseIcon from "@mui/icons-material/Close";
 import DescriptionIcon from "@mui/icons-material/Description";
 import FileUploadIcon from "@mui/icons-material/FileUpload";
 import FlightIcon from "@mui/icons-material/Flight";
+import dayjs from "dayjs";
 
 import "./App.css";
 
 const formatDateToDDMMYYYY = (date) => {
-  if (!date) return "";
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  // A 'date' aqui é um objeto dayjs
+  if (!date || !date.isValid()) return "";
+  return date.format("DD/MM/YYYY");
 };
 
 function App() {
@@ -57,16 +53,21 @@ function App() {
 
   const combinedDataRef = useRef(null);
 
-  const [showImportStatusTermosModal, setShowImportStatusTermosModal] = useState(false);
-  // REMOVER COMPLETAMENTE ESTES ESTADOS:
-  // const [showExtractedDataModal, setShowExtractedDataModal] = useState(false);
-  // const [extractedTermData, setExtractedTermData] = useState([]);
+  const [showImportStatusTermosModal, setShowImportStatusTermosModal] =
+    useState(false);
 
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  // O estado do Toast continua aqui, pois App.jsx controla as notificações
+  const [toast, setToast] = useState({
+    show: false,
+    message: "",
+    title: "",
+    type: "success",
+  });
+
+  // A função para disparar o Toast também permanece aqui
   const showAppToast = useCallback((title, message, type) => {
     setToast({ show: true, title, message, type });
   }, []);
-
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -88,6 +89,17 @@ function App() {
     [filterAwb, filterTermo, filterDestino, filterVoo, filterDataTermo]
   );
 
+  const handleResetFilters = () => {
+    // Limpa os campos de input
+    setFilterAwb("");
+    setFilterTermo("");
+    setFilterDestino("");
+    setFilterVoo("");
+    setFilterDataTermo(null); // Reseta o DatePicker para nulo
+
+    // Limpa os filtros ativos, para que a grid recarregue com todos os dados
+    setActiveFilters({});
+  };
   const handleImportAction = useCallback((type, data) => {
     if (combinedDataRef.current) {
       if (type === "franchise") {
@@ -97,24 +109,13 @@ function App() {
       } else if (type === "status_termos") {
         setShowImportStatusTermosModal(true);
       }
-      // REMOVER COMPLETAMENTE ESTE BLOCO:
-      // else if (type === 'extractedTerms' && data) {
-      //   setExtractedTermData(data);
-      //   setShowExtractedDataModal(true);
-      // }
     }
     setIsSidebarOpen(false);
-  }, []); // Dependências ajustadas
+  }, []);
 
   const handleCloseImportStatusTermosModal = () => {
     setShowImportStatusTermosModal(false);
   };
-
-  // REMOVER COMPLETAMENTE ESTA FUNÇÃO:
-  // const handleCloseExtractedDataModal = () => {
-  //   setShowExtractedDataModal(false);
-  //   setExtractedTermData([]);
-  // };
 
   const handleImportSuccessStatusTermos = () => {
     if (combinedDataRef.current && combinedDataRef.current.fetchData) {
@@ -127,30 +128,15 @@ function App() {
     <Router>
       <Navbar />
 
-      <ToastContainer
-        position="top-end"
-        className="p-3"
-        style={{ zIndex: 1051 }}
-      >
-        <Toast
-          onClose={() => setToast({ ...toast, show: false })}
-          show={toast.show}
-          delay={5000}
-          autohide
-          bg={toast.type}
-        >
-          <Toast.Header>
-            <strong className="me-auto">{toast.title}</strong>
-            <small>Agora</small>
-          </Toast.Header>
-          <Toast.Body
-            className={toast.type === "light" ? "text-dark" : "text-white"}
-          >
-            {toast.message}
-          </Toast.Body>
-        </Toast>
-      </ToastContainer>
-
+      {/* --- 2. SUBSTITUA O BLOCO ANTIGO DO TOAST PELO NOVO COMPONENTE --- */}
+      <NotificationToast
+        show={toast.show}
+        title={toast.title}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, show: false })}
+      />
+      {/* --- FIM DA SUBSTITUIÇÃO --- */}
 
       <Tooltip
         title={isSidebarOpen ? "Fechar Menu" : "Abrir Menu de Filtros"}
@@ -224,13 +210,11 @@ function App() {
                     </ListItemIcon>
                     <ListItemText primary="Importar termos SEFAZ" />
                   </Dropdown.Item>
-                  {/* --- NOVO ITEM DE MENU --- */}
                   <Dropdown.Item
                     onClick={() => handleImportAction("status_termos")}
                   >
                     <ListItemIcon sx={{ minWidth: 36 }}>
-                      <DescriptionIcon sx={{ color: "#dee2e6" }} />{" "}
-                      {/* Pode usar um ícone diferente se preferir */}
+                      <DescriptionIcon sx={{ color: "#dee2e6" }} />
                     </ListItemIcon>
                     <ListItemText primary="Importar Status Termos" />
                   </Dropdown.Item>
@@ -321,7 +305,7 @@ function App() {
                 label="Data do Termo"
                 value={filterDataTermo}
                 onChange={(date) => setFilterDataTermo(date)}
-                format="dd/MM/yyyy"
+                format="DD/MM/YYYY"
                 slotProps={{
                   textField: {
                     fullWidth: true,
@@ -339,16 +323,25 @@ function App() {
                   "& .MuiSvgIcon-root": { color: "#ccc" },
                 }}
               />
-
-              <Button
-                variant="contained"
-                startIcon={<FilterAltIcon />}
-                type="submit"
-                fullWidth
-                sx={{ mt: 2 }}
-              >
-                Aplicar Filtros
-              </Button>
+              <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<ReplayIcon />}
+                  onClick={handleResetFilters}
+                  fullWidth
+                >
+                  Limpar
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<FilterAltIcon />}
+                  type="submit"
+                  fullWidth
+                >
+                  Aplicar
+                </Button>
+              </Box>
             </Box>
           </List>
         </Box>

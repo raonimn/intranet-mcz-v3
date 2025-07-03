@@ -457,139 +457,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
         ref={importActionsInternalRef}
       />
 
-      {cardsLoading ? (
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            minHeight: "150px",
-          }}
-        >
-          <CircularProgress color="secondary" />
-        </Box>
-      ) : (
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 3,
-            mb: 4,
-          }}
-        >
-          {/* Cards de Sumário */}
-          <Card
-            raised
-            sx={{ height: "100%", display: "flex", flexDirection: "column" }}
-          >
-            <CardHeader
-              title="AWBs Registrados no Banco"
-              titleTypographyProps={{ variant: "h6", align: "center" }}
-            />
-            <CardContent
-              sx={{ flexGrow: 1, overflowY: "auto", maxHeight: "300px" }}
-            >
-              <List dense>
-                {awbsByDestination.map((item, idx) => (
-                  <ListItem
-                    key={idx}
-                    sx={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <ListItemText primary={item.destino || "N/A"} />
-                    <Chip
-                      label={formatNumber(item.total_awbs)}
-                      color="primary"
-                      size="small"
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </CardContent>
-            <CardActions
-              sx={{
-                justifyContent: "center",
-                p: 1,
-                backgroundColor: "action.hover",
-              }}
-            >
-              <Typography variant="subtitle1" fontWeight="bold">
-                Total: {formatNumber(totalAwbsCalculated)} -{" "}
-                {lastFranchiseUpdate}
-              </Typography>
-            </CardActions>
-          </Card>
-          <Card
-            raised
-            sx={{ height: "100%", display: "flex", flexDirection: "column" }}
-          >
-            <CardHeader
-              title="Datas Faltantes (últimos 30 dias)"
-              titleTypographyProps={{ variant: "h6", align: "center" }}
-            />
-            <CardContent
-              sx={{ flexGrow: 1, overflowY: "auto", maxHeight: "300px" }}
-            >
-              <List dense>
-                {Object.entries(missingDates || {}).map(
-                  ([destino, dates], idx) => (
-                    <ListItem key={idx}>
-                      <ListItemText
-                        primary={
-                          <Typography component="span" fontWeight="bold">
-                            {destino || "N/A"}:
-                          </Typography>
-                        }
-                        secondary={
-                          Array.isArray(dates) && dates.length > 0
-                            ? dates.join(", ")
-                            : "Todas as datas presentes."
-                        }
-                      />
-                    </ListItem>
-                  )
-                )}
-              </List>
-            </CardContent>
-          </Card>
-          <Card
-            raised
-            sx={{
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <CardHeader
-              title="Malha de Voos"
-              titleTypographyProps={{ variant: "h6", align: "center" }}
-            />
-            <CardContent
-              sx={{
-                flexGrow: 1,
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                align="center"
-              >
-                (Funcionalidade em desenvolvimento)
-              </Typography>
-              <CircularProgress color="info" size={30} sx={{ mt: 2 }} />
-            </CardContent>
-          </Card>
-        </Box>
-      )}
+      
 
       <Box
         sx={{ width: "100%", borderBottom: 1, borderColor: "divider", mb: 3 }}
@@ -768,6 +636,139 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
           </Typography>
         </Paper>
       </TabPanel>
+      {cardsLoading ? (
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "150px",
+          }}
+        >
+          <CircularProgress color="secondary" />
+        </Box>
+      ) : (
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 3,
+            mb: 4,
+          }}
+        >
+          {/* Cards de Sumário */}
+          <Card
+            raised
+            sx={{ height: "100%", display: "flex", flexDirection: "column" }}
+          >
+            <CardHeader
+              title="AWBs Registrados no Banco"
+              titleTypographyProps={{ variant: "h6", align: "center" }}
+            />
+            <CardContent
+              sx={{ flexGrow: 1, overflowY: "auto", maxHeight: "300px" }}
+            >
+              <List dense>
+                {awbsByDestination.map((item, idx) => (
+                  <ListItem
+                    key={idx}
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <ListItemText primary={item.destino || "N/A"} />
+                    <Chip
+                      label={formatNumber(item.total_awbs)}
+                      color="primary"
+                      size="small"
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </CardContent>
+            <CardActions
+              sx={{
+                justifyContent: "center",
+                p: 1,
+                backgroundColor: "action.hover",
+              }}
+            >
+              <Typography variant="subtitle1" fontWeight="bold">
+                Total: {formatNumber(totalAwbsCalculated)} -{" "}
+                {lastFranchiseUpdate}
+              </Typography>
+            </CardActions>
+          </Card>
+          <Card
+            raised
+            sx={{ height: "100%", display: "flex", flexDirection: "column" }}
+          >
+            <CardHeader
+              title="Datas Faltantes (últimos 30 dias)"
+              titleTypographyProps={{ variant: "h6", align: "center" }}
+            />
+            <CardContent
+              sx={{ flexGrow: 1, overflowY: "auto", maxHeight: "300px" }}
+            >
+              <List dense>
+                {Object.entries(missingDates || {}).map(
+                  ([destino, dates], idx) => (
+                    <ListItem key={idx}>
+                      <ListItemText
+                        primary={
+                          <Typography component="span" fontWeight="bold">
+                            {destino || "N/A"}:
+                          </Typography>
+                        }
+                        secondary={
+                          Array.isArray(dates) && dates.length > 0
+                            ? dates.join(", ")
+                            : "Todas as datas presentes."
+                        }
+                      />
+                    </ListItem>
+                  )
+                )}
+              </List>
+            </CardContent>
+          </Card>
+          <Card
+            raised
+            sx={{
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <CardHeader
+              title="Malha de Voos"
+              titleTypographyProps={{ variant: "h6", align: "center" }}
+            />
+            <CardContent
+              sx={{
+                flexGrow: 1,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                align="center"
+              >
+                (Funcionalidade em desenvolvimento)
+              </Typography>
+              <CircularProgress color="info" size={30} sx={{ mt: 2 }} />
+            </CardContent>
+          </Card>
+        </Box>
+      )}
     </Box>
   );
 }

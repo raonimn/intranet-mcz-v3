@@ -253,8 +253,8 @@ initializeDatabase()
                     finalHavingParams.push(`%${formattedAwb}%`);
                 }
                 if (destino && destino.trim() !== '') {
-                    finalHavingClauses.push(`fr.destino LIKE ?`);
-                    finalHavingParams.push(`%${destino.toUpperCase().trim()}%`);
+                    finalHavingClauses.push(`fr.destino = ?`);
+                    finalHavingParams.push(`${destino.toUpperCase().trim()}`);
                 }
 
                 const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';

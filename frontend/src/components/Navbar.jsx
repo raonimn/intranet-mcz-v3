@@ -24,7 +24,7 @@ function Navbar() {
                 border: "1px solid #ddd",
                 borderRadius: "4px",
                 marginRight: "10px",
-                height: "50px", // A altura vai para o contêiner
+                height: "60px", // A altura vai para o contêiner
                 boxSizing: "border-box",
               }}
             >

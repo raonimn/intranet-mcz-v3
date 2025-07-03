@@ -654,6 +654,7 @@ function CombinedData({ filters, isSidebarOpen, onTermosImported }, ref) {
             gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             gap: 3,
             mb: 4,
+            mt: 2
           }}
         >
           {/* Cards de Sumário */}

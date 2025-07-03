@@ -1,8 +1,7 @@
-# docker-compose.yml
-version: '3.8'
+# docker-compose.test.yml
 
 services:
-  mysql_db:
+  mysql_db_test: # Nome único para o serviço de BD de teste
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
     environment:
@@ -10,15 +9,13 @@ services:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASSWORD}
-      TZ: America/Maceio 
-     
-
+      TZ: America/Maceio
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql_data_test:/var/lib/mysql # Volume isolado para teste
     ports:
-      - "3306:3306"
+      - "${DB_PORT_TEST}:3306" # Usa a porta do .env.test (ex: 3307)
     networks:
-      - app-network
+      - app-network-test # Rede isolada para teste
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -26,46 +23,40 @@ services:
       retries: 5
       start_period: 30s
 
-  backend:
+  backend_test: # Nome único
     build:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8080:8080"
+      - "8080"
     environment:
       PORT: 8080
-      DB_HOST: mysql_db
+      DB_HOST: mysql_db_test # Aponta para o BD de teste
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
-      LOG_DEBUG_MODE: "true"
     depends_on:
-      mysql_db:
+      mysql_db_test:
         condition: service_healthy
-    volumes:
-      - ./backend:/app/backend
     networks:
-      - app-network
-  frontend:
+      - app-network-test
+
+  frontend_test: # Nome único
     build:
       context: .
       dockerfile: Dockerfile.frontend
     ports:
-      - "80:80"
-      - "5173:5173" # Opcional, para desenvolvimento local se precisar
+      - "${HOST_PORT_HTTP_TEST}:80" # Usa a porta do .env.test (ex: 8081)
     environment:
-      # ALTERAÇÃO CRUCIAL AQUI: VITE_BACKEND_URL agora aponta para o caminho do proxy Nginx
-      VITE_BACKEND_URL: /api # <-- Mude para /api
+      VITE_BACKEND_URL: /api
     depends_on:
-      - backend
-    volumes:
-      - ./frontend:/app/frontend # Manter para desenvolvimento
+      - backend_test
     networks:
-      - app-network
+      - app-network-test
 
 networks:
-  app-network:
+  app-network-test: # Rede isolada para teste
     driver: bridge
 
 volumes:
-  mysql_data:
+  mysql_data_test: # Volume isolado para teste

@@ -26,6 +26,8 @@ const {
 
 const { processPdfAndSaveData } = require('./services/pdfProcessor');
 
+const { consultarAWBs } = require('./services/rastreamentoAWB')
+
 const app = express();
 const port = process.env.PORT || 8080;
 const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
@@ -127,7 +129,28 @@ async function startServer() {
         // --- DEFINIÇÕES DE ROTAS DO EXPRESS AQUI DENTRO ---
         // (Todo o seu código de rotas app.get, app.post, etc. permanece aqui, sem alterações)
 
-        app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
+        // backend/index.js ou app.js
+        app.get('/api/rastrearAWB', async (req, res) => {
+            const { awb } = req.query; // <- alterado de req.body para req.query
+            if (!awb || typeof awb !== 'string') {
+                return res.status(400).json({ success: false, message: 'Parâmetro "awb" é obrigatório na query string.' });
+            }
+            try {
+                console.log(awb); // deve ser uma string: "65714180,65714062,65713841"
+
+                // Garante que seja array, dividindo por vírgula
+                const awbs = awb.split(',').map(str => str.trim());
+
+                const resultRastreamento = await consultarAWBs(...awbs);
+                res.status(200).json(resultRastreamento);
+
+            } catch (error) {
+                console.error(`[ERROR-SERVER] Erro ao processar requisição de log: ${error.message}`);
+                res.status(500).json({ success: false, message: 'Erro ao rastrear AWB.' });
+            }
+        });
+
+
 
         app.post('/api/upload-pdf', upload.single('pdf_file'), async (req, res) => {
             const file = req.file;
@@ -293,20 +316,20 @@ async function startServer() {
                 // A ordenação solicitada por franchise_report.data_emissao é equivalente a sefaz_report.data_emissao
                 // pois a data do termo é a referência principal. Mantemos a ordenação por sr.data_emissao.
                 const query = `
-            SELECT 
+                SELECT 
                 sr.id, sr.data_emissao, sr.chave_mdfe, sr.numero_termo, sr.chave_nfe, 
                 sr.numero_cte, sr.numero_nfe, sr.numero_voo, sr.data_registro, sr.awb, 
                 fr.chave_cte AS fr_chave_cte, fr.origem AS fr_origem, fr.destino AS fr_destino, 
                 fr.tomador AS fr_tomador, fr.notas AS fr_notas, fr.data_emissao AS fr_data_emissao, 
                 fr.destinatario AS fr_destinatario, sst.situacao AS sefaz_status_situacao
-            FROM sefaz_report sr
-            LEFT JOIN franchise_report fr ON sr.awb = fr.awb
-            LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
-            ${whereString}
-            ${havingString}
-            ORDER BY STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') DESC, sr.numero_termo ASC
-            LIMIT 1000;
-        `;
+                FROM sefaz_report sr
+                LEFT JOIN franchise_report fr ON sr.awb = fr.awb
+                LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
+                ${whereString}
+                ${havingString}
+                ORDER BY STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') DESC, sr.numero_termo ASC
+                LIMIT 1000;
+                `;
 
                 const finalParams = params.concat(havingParams);
 
@@ -332,11 +355,11 @@ async function startServer() {
                 const currentPool = await getDbPoolInstance();
                 connection = await currentPool.getConnection();
                 const query = `
-                    SELECT destino, COUNT(awb) AS total_awbs
-                    FROM franchise_report
-                    WHERE destino IS NOT NULL AND destino != ''
-                    GROUP BY destino
-                    ORDER BY destino ASC;
+                SELECT destino, COUNT(awb) AS total_awbs
+                FROM franchise_report
+                WHERE destino IS NOT NULL AND destino != ''
+                GROUP BY destino
+                ORDER BY destino ASC;
                 `;
                 const [rows] = await connection.execute(query);
                 res.status(200).json(rows);
@@ -492,6 +515,7 @@ async function startServer() {
             }
         });
 
+        app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
         // --- Fim das Rotas ---
 
         app.listen(port, '0.0.0.0', () => {

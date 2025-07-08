@@ -42,7 +42,7 @@ const getRowClassName = (status) => {
     return '';
 };
 
-const CombinedDataTable = ({ loading, items, order, orderBy, onRequestSort }) => {
+const CombinedDataTable = ({ loading, items, order, orderBy, onRequestSort, onAwbClick }) => {
     const { showToast } = useToast();
 
     const copyToClipboard = useCallback(async (text, type) => {
@@ -87,7 +87,19 @@ const CombinedDataTable = ({ loading, items, order, orderBy, onRequestSort }) =>
                         <TableRow key={row.id} className={getRowClassName(row.sefaz_status_situacao)}>
                             <TableCell>{row.numero_termo || 'N/A'}</TableCell>
                             <TableCell>{row.data_emissao || 'N/A'}</TableCell>
-                            <TableCell onClick={() => copyToClipboard(String(row.awb).slice(-8), 'AWB')} sx={{ cursor: 'pointer', fontWeight: 'bold' }}>{row.awb || 'N/A'}</TableCell>
+                            <TableCell
+                                onClick={() => row.awb && onAwbClick(row.awb)}
+                                sx={{
+                                    fontWeight: 'bold',
+                                    cursor: row.awb ? 'pointer' : 'default',
+                                    color: row.awb ? 'primary.main' : 'inherit',
+                                    '&:hover': {
+                                        textDecoration: row.awb ? 'underline' : 'none',
+                                    },
+                                }}
+                            >
+                                {row.awb || 'N/A'}
+                            </TableCell>
                             <TableCell>{row.fr_data_emissao || 'N/A'}</TableCell>
                             <TableCell>{row.fr_origem || 'N/A'}</TableCell>
                             <TableCell sx={{ fontWeight: 'bold' }}>{row.fr_destino || 'N/A'}</TableCell>

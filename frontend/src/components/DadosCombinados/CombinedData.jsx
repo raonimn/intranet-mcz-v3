@@ -8,6 +8,8 @@ import logActivity from '../../utils/logService';
 // Novos componentes de apresentação
 import SummaryCards from './SummaryCards';
 import CombinedDataTable from './CombinedDataTable';
+import AWBTrackingModal from './AWBTrackingModal';
+
 
 // Componentes de importação
 import ImportActions from '../Import/ImportActions';
@@ -38,6 +40,10 @@ function stableSort(array, comparator) {
 
 const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
     const { showToast } = useToast();
+    const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+    const [trackingData, setTrackingData] = useState(null);
+    const [trackingAwb, setTrackingAwb] = useState('');
+    const [isTrackingLoading, setIsTrackingLoading] = useState(false);
     const importActionsRef = useRef(null);
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -97,6 +103,34 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
             setCardsLoading(false);
         }
     }, [BACKEND_URL, showToast]);
+
+    const handleAwbTrack = useCallback(async (awb) => {
+        if (!awb) return;
+
+        const awbNumber = String(awb).slice(-8);
+        setTrackingAwb(awbNumber);
+        setIsTrackingModalOpen(true);
+        setIsTrackingLoading(true);
+
+        try {
+            const response = await axios.get(`${BACKEND_URL}/api/rastrearAWB?awb=${awbNumber}`);
+            setTrackingData(response.data);
+        } catch (err) {
+            showToast('Erro de Rastreio', err.response?.data?.message || 'Não foi possível rastrear o AWB.', 'danger');
+            // Define um estado de erro para ser exibido no modal
+            setTrackingData({ [awbNumber]: { error: 'Falha ao buscar dados do servidor.' } });
+        } finally {
+            setIsTrackingLoading(false);
+        }
+    }, [BACKEND_URL, showToast]);
+
+    const handleCloseTrackingModal = () => {
+        setIsTrackingModalOpen(false);
+        // Limpa os dados ao fechar para a próxima abertura
+        setTrackingData(null);
+        setTrackingAwb('');
+    };
+
 
     useEffect(() => {
         fetchData();
@@ -211,6 +245,8 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
                 order={order}
                 orderBy={orderBy}
                 onRequestSort={handleRequestSort}
+                onAwbClick={handleAwbTrack} // <-- ADICIONE ESTA LINHA
+
             />
 
             <TablePagination
@@ -229,6 +265,13 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
                 awbsByDestination={awbsByDestination}
                 missingDates={missingDates}
                 lastFranchiseUpdate={lastFranchiseUpdate}
+            />
+            <AWBTrackingModal
+                open={isTrackingModalOpen}
+                onClose={handleCloseTrackingModal}
+                loading={isTrackingLoading}
+                data={trackingData}
+                awb={trackingAwb}
             />
         </Box>
     );

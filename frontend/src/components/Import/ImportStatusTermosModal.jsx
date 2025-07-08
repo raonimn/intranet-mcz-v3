@@ -2,7 +2,9 @@
 import React, { useState, useCallback } from 'react';
 import axios from 'axios';
 import { Modal, Form } from 'react-bootstrap';
-import logActivity from '../utils/logService';
+import logActivity from "../../utils/logService";
+import useToast from '../../hooks/useToast'; // <-- IMPORTAR
+
 
 import {
     Button,
@@ -11,8 +13,10 @@ import {
     CircularProgress
 } from '@mui/material';
 
-const ImportStatusTermosModal = ({ show, handleClose, showToast, onImportSuccess }) => {
+const ImportStatusTermosModal = ({ show, handleClose, onImportSuccess }) => {
+    const { showToast } = useToast(); // <-- USAR O HOOK
     const [pastedData, setPastedData] = useState('');
+
     const [loading, setLoading] = useState(false);
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;

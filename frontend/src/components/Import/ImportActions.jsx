@@ -13,7 +13,11 @@ import { TextField, InputAdornment, Button, Box } from "@mui/material"; // Butto
 
 import ImportStatusTermosModal from "./ImportStatusTermosModal";
 
-const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
+import useToast from '../../hooks/useToast'; // <-- IMPORTAR
+
+
+const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
+  const { showToast } = useToast(); // <-- USAR O HOOK
   const [showFranchiseModal, setShowFranchiseModal] = useState(false);
   const [showTermosModal, setShowTermosModal] = useState(false);
   const [showStatusTermosModal, setShowStatusTermosModal] = useState(false);
@@ -72,7 +76,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
       showToast(
         "Erro",
         error.response?.data?.message ||
-          "Erro ao processar o arquivo Franchise Report.",
+        "Erro ao processar o arquivo Franchise Report.",
         "danger"
       );
       console.error("[ImportActions] Erro no upload Franchise:", error);
@@ -137,7 +141,7 @@ const ImportActions = forwardRef(({ onProcessingChange, showToast }, ref) => {
       showToast(
         "Erro",
         error.response?.data?.message ||
-          "Erro ao processar o arquivo de Termos.",
+        "Erro ao processar o arquivo de Termos.",
         "danger"
       );
       console.error("[ImportActions] Erro no upload Termos:", error);

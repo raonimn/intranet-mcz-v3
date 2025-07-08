@@ -55,7 +55,7 @@ const CombinedDataTable = ({ loading, items, order, orderBy, onRequestSort }) =>
             console.log(err);
         }
     }, [showToast]);
-    
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
@@ -84,7 +84,7 @@ const CombinedDataTable = ({ loading, items, order, orderBy, onRequestSort }) =>
                 </TableHead>
                 <TableBody>
                     {items.map((row, index) => (
-                        <TableRow key={`${row.awb}-${row.numero_termo}-${index}`} className={getRowClassName(row.sefaz_status_situacao)}>
+                        <TableRow key={row.id} className={getRowClassName(row.sefaz_status_situacao)}>
                             <TableCell>{row.numero_termo || 'N/A'}</TableCell>
                             <TableCell>{row.data_emissao || 'N/A'}</TableCell>
                             <TableCell onClick={() => copyToClipboard(String(row.awb).slice(-8), 'AWB')} sx={{ cursor: 'pointer', fontWeight: 'bold' }}>{row.awb || 'N/A'}</TableCell>

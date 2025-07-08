@@ -10,7 +10,7 @@ import CombinedData from "../components/DadosCombinados/CombinedData"; // O cami
 import ImportStatusTermosModal from "../components/Import/ImportStatusTermosModal";
 
 // Componentes MUI
-import { Box, Fab, Tooltip } from "@mui/material";
+import { Box, Fab, Tooltip, CircularProgress, Typography } from "@mui/material"; // <-- ADICIONE AQUI
 import MenuIcon from "@mui/icons-material/Menu";
 import CloseIcon from "@mui/icons-material/Close";
 
@@ -23,6 +23,8 @@ const formatDateToDDMMYYYY = (date) => {
 function DadosCombinadosPage() {
   const { showToast } = useToast();
   const combinedDataRef = useRef(null);
+  const [isProcessing, setIsProcessing] = useState(false); // <-- ADICIONE ESTA LINHA
+
 
   // Estado para controle da Sidebar
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -33,54 +35,58 @@ function DadosCombinadosPage() {
     termo: "",
     destino: "",
     voo: "",
-    dataTermo: null, // O DatePicker do MUI trabalha bem com `null` e objetos dayjs
+    dataInicial: null, // Alterado de dataTermo
+    dataFinal: null,   // Novo campo
   });
 
   // Estado para os filtros que são efetivamente aplicados na busca
   const [activeFilters, setActiveFilters] = useState({});
-  
+
   // Estado para o modal de status de termos
   const [showImportStatusTermosModal, setShowImportStatusTermosModal] = useState(false);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
+  // --- 2. NOVO MANIPULADOR PARA AS DATAS ---
+  const handleDateChange = useCallback((date, fieldName) => {
+    setFilters(prev => ({ ...prev, [fieldName]: date }));
+  }, []);
+
   // Manipulador genérico para atualizar o estado dos filtros
   const handleFilterChange = useCallback((e) => {
-    // Tratamento especial para o DatePicker que não tem 'e.target'
-    if (e.target && e.target.name) {
-        setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    } else {
-        // Assume que é o DatePicker
-        setFilters(prev => ({...prev, dataTermo: e}));
-    }
+    setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
   }, []);
 
   const handleResetFilters = useCallback(() => {
-    setFilters({ awb: "", termo: "", destino: "", voo: "", dataTermo: null });
+    setFilters({ awb: "", termo: "", destino: "", voo: "", dataInicial: null, dataFinal: null });
     setActiveFilters({});
-    showToast("Filtros Limpos", "A tabela foi recarregada com todos os dados.", "info");
+    showToast("Filtros Limpos", "A tabela foi recarregada com os dados mais recentes.", "info");
   }, [showToast]);
 
   const handleFilterSubmit = useCallback((e) => {
     e.preventDefault();
     const formattedFilters = {
-      ...filters,
-      dataTermo: formatDateToDDMMYYYY(filters.dataTermo),
+      awb: filters.awb,
+      termo: filters.termo,
+      destino: filters.destino,
+      voo: filters.voo,
+      dataInicial: formatDateToDDMMYYYY(filters.dataInicial),
+      dataFinal: formatDateToDDMMYYYY(filters.dataFinal),
     };
     setActiveFilters(formattedFilters);
-    setIsSidebarOpen(false); // Fecha a sidebar após aplicar
+    setIsSidebarOpen(false);
     showToast("Filtros Aplicados", "A tabela foi atualizada.", "success");
   }, [filters, showToast]);
 
   const handleImportClick = useCallback((importType) => {
     if (combinedDataRef.current) {
-        if (importType === 'franchise') {
-            combinedDataRef.current.showFranchiseModal();
-        } else if (importType === 'termos') {
-            combinedDataRef.current.showTermosModal();
-        } else if (importType === 'status_termos') {
-            setShowImportStatusTermosModal(true);
-        }
+      if (importType === 'franchise') {
+        combinedDataRef.current.showFranchiseModal();
+      } else if (importType === 'termos') {
+        combinedDataRef.current.showTermosModal();
+      } else if (importType === 'status_termos') {
+        setShowImportStatusTermosModal(true);
+      }
     }
     setIsSidebarOpen(false);
   }, []);
@@ -88,15 +94,41 @@ function DadosCombinadosPage() {
   const handleImportSuccess = () => {
     // Função para recarregar os dados da tabela após uma importação bem-sucedida
     if (combinedDataRef.current?.fetchData) {
-        combinedDataRef.current.fetchData();
+      combinedDataRef.current.fetchData();
     }
     setShowImportStatusTermosModal(false);
   };
-  
+
+  const handleProcessing = (status) => setIsProcessing(status); // <-- ADICIONE ESTA FUNÇÃO
+
+
   return (
     <>
+      {isProcessing && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            zIndex: 2001, // Um z-index alto para ficar sobre tudo
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            flexDirection: 'column',
+            color: 'white'
+          }}
+        >
+          <CircularProgress color="inherit" size={60} />
+          <Typography variant="h6" sx={{ mt: 2 }}>
+            Processando Importação...
+          </Typography>
+        </Box>
+      )}
       <Navbar />
-      
+
       <Tooltip title={isSidebarOpen ? "Fechar Menu" : "Abrir Menu de Filtros e Ferramentas"} placement="right">
         <Fab
           color="primary"
@@ -106,21 +138,23 @@ function DadosCombinadosPage() {
           {isSidebarOpen ? <CloseIcon /> : <MenuIcon />}
         </Fab>
       </Tooltip>
-      
+
       <Sidebar
         isOpen={isSidebarOpen}
         toggleSidebar={toggleSidebar}
         filters={filters}
-        onFilterChange={handleFilterChange}
+        onFilterChange={handleFilterChange} // Para os campos de texto
+        onDateChange={handleDateChange}     // Novo handler para as datas
         onResetFilters={handleResetFilters}
         onFilterSubmit={handleFilterSubmit}
         onImportClick={handleImportClick}
       />
 
       <Box component="main" sx={{ p: 2, ml: { xs: 0, md: isSidebarOpen ? '280px' : 0 }, transition: 'margin-left 0.3s' }}>
-        <CombinedData 
-            filters={activeFilters}
-            ref={combinedDataRef}
+        <CombinedData
+          filters={activeFilters}
+          ref={combinedDataRef}
+          onProcessing={handleProcessing} // <-- ADICIONE ESTA PROP
         />
       </Box>
 

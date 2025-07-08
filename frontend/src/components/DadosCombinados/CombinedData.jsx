@@ -36,7 +36,7 @@ function stableSort(array, comparator) {
     return stabilizedThis.map((el) => el[0]);
 }
 
-const CombinedData = forwardRef(({ filters }, ref) => {
+const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
     const { showToast } = useToast();
     const importActionsRef = useRef(null);
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
@@ -172,6 +172,7 @@ const CombinedData = forwardRef(({ filters }, ref) => {
 
             {/* Este componente agora é invisível, apenas provê a lógica dos modais */}
             <ImportActions ref={importActionsRef} onProcessingChange={(processing) => {
+                onProcessing(processing); // <-- ADICIONE ESTA LINHA
                 if (!processing) {
                     fetchData();
                     fetchDashboardData();

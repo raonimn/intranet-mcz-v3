@@ -39,24 +39,24 @@ const LOG_DEBUG = process.env.LOG_DEBUG_MODE === 'true';
  * @returns A promessa resolvida pela função de callback.
  */
 async function connectWithRetry(callbackFn, retries = 5, delay = 5000) {
-  for (let i = 1; i <= retries; i++) {
-    try {
-      // Tenta executar a função original
-      return await callbackFn();
-    } catch (err) {
-      // Verifica se o erro é o de DNS temporário
-      if (err.code === 'EAI_AGAIN') {
-        console.log(`[DB-RETRY] Falha na resolução de DNS para o DB. Tentando novamente em ${delay / 1000}s... (Tentativa ${i}/${retries})`);
-        // Espera um pouco antes da próxima tentativa
-        await new Promise(res => setTimeout(res, delay));
-      } else {
-        // Se for qualquer outro erro, lança-o imediatamente
-        throw err;
-      }
+    for (let i = 1; i <= retries; i++) {
+        try {
+            // Tenta executar a função original
+            return await callbackFn();
+        } catch (err) {
+            // Verifica se o erro é o de DNS temporário
+            if (err.code === 'EAI_AGAIN') {
+                console.log(`[DB-RETRY] Falha na resolução de DNS para o DB. Tentando novamente em ${delay / 1000}s... (Tentativa ${i}/${retries})`);
+                // Espera um pouco antes da próxima tentativa
+                await new Promise(res => setTimeout(res, delay));
+            } else {
+                // Se for qualquer outro erro, lança-o imediatamente
+                throw err;
+            }
+        }
     }
-  }
-  // Se todas as tentativas falharem, lança um erro final
-  throw new Error(`Não foi possível conectar ao banco de dados após ${retries} tentativas.`);
+    // Se todas as tentativas falharem, lança um erro final
+    throw new Error(`Não foi possível conectar ao banco de dados após ${retries} tentativas.`);
 }
 // --- FIM DA NOVA FUNÇÃO ---
 
@@ -112,7 +112,7 @@ async function startServer() {
     try {
         // Agora chamamos a função 'initializeDatabase' através do 'connectWithRetry'
         await connectWithRetry(initializeDatabase);
-        
+
         if (LOG_DEBUG) debugLog('[SERVER-INIT] Conexão com o banco de dados estabelecida com sucesso.');
 
         // AGUARDAR PELAS TABELAS ANTES DE CONFIGURAR AS ROTAS
@@ -126,7 +126,7 @@ async function startServer() {
 
         // --- DEFINIÇÕES DE ROTAS DO EXPRESS AQUI DENTRO ---
         // (Todo o seu código de rotas app.get, app.post, etc. permanece aqui, sem alterações)
-        
+
         app.get('/', (req, res) => res.send('Backend rodando! O frontend React deve ser acessado separadamente.'));
 
         app.post('/api/upload-pdf', upload.single('pdf_file'), async (req, res) => {
@@ -234,8 +234,10 @@ async function startServer() {
         });
 
         app.get('/api/combined-data-specific', async (req, res) => {
-            const { numeroVoo, dataTermo, awb, numeroTermo, destino } = req.query;
+            // --- 1. AJUSTE: Capturar dataInicial e dataFinal da query ---
+            const { numeroVoo, dataInicial, dataFinal, awb, termo, destino, voo } = req.query;
             let connection;
+
             try {
                 const currentPool = await getDbPoolInstance();
                 connection = await currentPool.getConnection();
@@ -243,69 +245,73 @@ async function startServer() {
                 let whereClauses = [];
                 let params = [];
 
-                if (numeroVoo && numeroVoo.trim() !== '') {
-                    let formattedVoo = numeroVoo.trim();
-                    if (formattedVoo.length === 4) {
-                        formattedVoo = `AD${formattedVoo}`;
-                    }
-                    whereClauses.push('sr.numero_voo LIKE ?');
-                    params.push(`%${formattedVoo}%`);
-                }
-
-                if (dataTermo && dataTermo.trim() !== '') {
-                    whereClauses.push("STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') = STR_TO_DATE(?, '%d/%m/%Y')");
-                    params.push(dataTermo.trim());
-                } else {
-                    const today = new Date();
-                    const twoDaysAgo = new Date();
-                    twoDaysAgo.setDate(today.getDate() - 2);
-
-                    const todayFormattedForQuery = formatDateToDDMMYYYY(today);
-                    const twoDaysAgoFormattedForQuery = formatDateToDDMMYYYY(twoDaysAgo);
-
+                // --- 2. AJUSTE: Lógica para filtro de período ---
+                // Se dataInicial e dataFinal forem fornecidas, cria um filtro BETWEEN
+                if (dataInicial && dataInicial.trim() !== '' && dataFinal && dataFinal.trim() !== '') {
                     whereClauses.push("STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') BETWEEN STR_TO_DATE(?, '%d/%m/%Y') AND STR_TO_DATE(?, '%d/%m/%Y')");
-                    params.push(twoDaysAgoFormattedForQuery);
-                    params.push(todayFormattedForQuery);
+                    params.push(dataInicial.trim());
+                    params.push(dataFinal.trim());
                 }
+                // Se apenas a dataInicial for fornecida, filtra a partir dela
+                else if (dataInicial && dataInicial.trim() !== '') {
+                    whereClauses.push("STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') >= STR_TO_DATE(?, '%d/%m/%Y')");
+                    params.push(dataInicial.trim());
+                }
+                // Se apenas a dataFinal for fornecida, filtra até ela
+                else if (dataFinal && dataFinal.trim() !== '') {
+                    whereClauses.push("STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') <= STR_TO_DATE(?, '%d/%m/%Y')");
+                    params.push(dataFinal.trim());
+                }
+                // O `else` que limitava a 2 dias foi REMOVIDO para carregar o histórico.
 
-                if (numeroTermo && numeroTermo.trim() !== '') {
+                if (termo && termo.trim() !== '') {
                     whereClauses.push('sr.numero_termo = ?');
-                    params.push(numeroTermo.trim());
+                    params.push(termo.trim());
                 }
 
-                let finalHavingClauses = [];
-                let finalHavingParams = [];
+                let havingClauses = [];
+                let havingParams = [];
 
                 if (awb && awb.trim() !== '') {
-                    let formattedAwb = awb.trim();
-                    if (!formattedAwb.startsWith('577')) {
-                        formattedAwb = `577${formattedAwb}`;
-                    }
-                    finalHavingClauses.push(`sr.awb LIKE ?`);
-                    finalHavingParams.push(`%${formattedAwb}%`);
+                    // A lógica do AWB foi movida para o HAVING para permitir a busca pelo final do número
+                    havingClauses.push(`sr.awb LIKE ?`);
+                    havingParams.push(`%${awb.trim()}%`);
                 }
                 if (destino && destino.trim() !== '') {
-                    finalHavingClauses.push(`UPPER(fr.destino) = ?`); // Corrigido para ser exato e case-insensitive
-                    finalHavingParams.push(destino.toUpperCase().trim());
+                    havingClauses.push(`UPPER(fr.destino) LIKE ?`);
+                    havingParams.push(`%${destino.toUpperCase().trim()}%`);
+                }
+                if (voo && voo.trim() !== '') {
+                    havingClauses.push(`sr.numero_voo LIKE ?`);
+                    havingParams.push(`%${voo.trim()}%`);
                 }
 
                 const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-                const havingString = finalHavingClauses.length > 0 ? `HAVING ${finalHavingClauses.join(' AND ')}` : '';
+                const havingString = havingClauses.length > 0 ? `HAVING ${havingClauses.join(' AND ')}` : '';
 
+                // --- 3. AJUSTE: Adicionar LIMIT e garantir a ordenação correta ---
+                // A ordenação solicitada por franchise_report.data_emissao é equivalente a sefaz_report.data_emissao
+                // pois a data do termo é a referência principal. Mantemos a ordenação por sr.data_emissao.
                 const query = `
-                    SELECT sr.id, sr.data_emissao, sr.chave_mdfe, sr.numero_termo, sr.chave_nfe, sr.numero_cte, sr.numero_nfe, sr.numero_voo, sr.data_registro, sr.awb, fr.chave_cte AS fr_chave_cte, fr.origem AS fr_origem, fr.destino AS fr_destino, fr.tomador AS fr_tomador, fr.notas AS fr_notas, fr.data_emissao AS fr_data_emissao, fr.destinatario AS fr_destinatario, sst.situacao AS sefaz_status_situacao
-                    FROM sefaz_report sr
-                    LEFT JOIN franchise_report fr ON sr.awb = fr.awb
-                    LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
-                    ${whereString}
-                    ${havingString}
-                    ORDER BY sr.data_emissao DESC, sr.numero_termo ASC;
-                `;
+            SELECT 
+                sr.id, sr.data_emissao, sr.chave_mdfe, sr.numero_termo, sr.chave_nfe, 
+                sr.numero_cte, sr.numero_nfe, sr.numero_voo, sr.data_registro, sr.awb, 
+                fr.chave_cte AS fr_chave_cte, fr.origem AS fr_origem, fr.destino AS fr_destino, 
+                fr.tomador AS fr_tomador, fr.notas AS fr_notas, fr.data_emissao AS fr_data_emissao, 
+                fr.destinatario AS fr_destinatario, sst.situacao AS sefaz_status_situacao
+            FROM sefaz_report sr
+            LEFT JOIN franchise_report fr ON sr.awb = fr.awb
+            LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
+            ${whereString}
+            ${havingString}
+            ORDER BY STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') DESC, sr.numero_termo ASC
+            LIMIT 1000;
+        `;
 
-                const finalParams = params.concat(finalHavingParams);
+                const finalParams = params.concat(havingParams);
 
-                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data (Simplificada com Status):', query);
-                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params Combined Data (Simplificada com Status):', finalParams);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Combined Data:', query);
+                if (LOG_DEBUG) debugLog('[DEBUG-SERVER] Query Params:', finalParams);
 
                 const [rows] = await connection.execute(query, finalParams);
                 res.status(200).json(rows);
@@ -318,6 +324,7 @@ async function startServer() {
                 }
             }
         });
+
 
         app.get('/api/awbs-by-destination', async (req, res) => {
             let connection;
@@ -386,7 +393,7 @@ async function startServer() {
                 if (connection) connection.release();
             }
         });
-        
+
         function validateXlsx(req, res, next) {
             const file = req.file;
             if (!file || file.mimetype !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
@@ -395,7 +402,7 @@ async function startServer() {
             }
             next();
         }
-        
+
         app.post('/api/log', async (req, res) => {
             const { action, user_ip, mac_address, user_agent, details, success } = req.body;
             try {
@@ -406,7 +413,7 @@ async function startServer() {
                 res.status(500).json({ success: false, message: 'Erro ao registrar log.' });
             }
         });
-        
+
         app.get('/api/last-franchise-import-date', async (req, res) => {
             try {
                 const lastDate = await getLastFranchiseImportDate();
@@ -421,7 +428,7 @@ async function startServer() {
                 res.status(500).json({ success: false, message: 'Erro ao buscar data de atualização.' });
             }
         });
-        
+
         app.post('/api/upload-status-termos', async (req, res) => {
             const { pasted_data } = req.body;
 
@@ -438,7 +445,7 @@ async function startServer() {
                     await insertLog({ action: 'Falha na Importação de Status (Sem Dados Válidos)', details: { data: pasted_data }, success: false });
                     return res.status(400).json({ success: false, message: 'Nenhum dado válido para processar.' });
                 }
-                
+
                 const dataRows = lines.slice(1);
                 const parsedData = [];
                 for (const rowText of dataRows) {

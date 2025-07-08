@@ -14,8 +14,8 @@ function App() {
       {/* O NotificationToast agora é renderizado pelo ToastProvider em main.jsx */}
       <Routes>
         {/* Rota para a página inicial */}
-        <Route path="/" element={<HomePage />} />
-        
+        {/* <Route path="/" element={<HomePage />} /> */}
+            <Route path="/" element={<DadosCombinadosPage />} />    
         {/* Rota para a página principal de controle e análise de dados */}
         <Route path="/controle" element={<DadosCombinadosPage />} />
         

@@ -35,6 +35,7 @@ const Sidebar = ({
   toggleSidebar,
   filters,
   onFilterChange,
+  onDateChange, // <-- Nova prop
   onResetFilters,
   onFilterSubmit,
   onImportClick,
@@ -105,7 +106,7 @@ const Sidebar = ({
               }
             />
           </ListItem>
-          
+
           {/* Formulário de Filtros */}
           <Box
             component="form"
@@ -137,13 +138,25 @@ const Sidebar = ({
               sx={{ input: { color: "#fff" }, label: { color: "#ccc" }, ".MuiOutlinedInput-notchedOutline": { borderColor: "#555" } }}
             />
             <DatePicker
-              label="Data do Termo"
-              value={filters.dataTermo}
-              onChange={(date) => onFilterChange(date)} // Simplificado para passar apenas a data
+              label="Data Inicial"
+              value={filters.dataInicial}
+              onChange={(date) => onDateChange(date, 'dataInicial')}
               format="DD/MM/YYYY"
               slotProps={{ textField: { fullWidth: true, size: "small", variant: "outlined" } }}
-              sx={{ 
-                "& .MuiInputBase-input, & .MuiInputLabel-root, & .MuiSvgIcon-root": { color: "#ccc" }, 
+              sx={{
+                "& .MuiInputBase-input, & .MuiInputLabel-root, & .MuiSvgIcon-root": { color: "#ccc" },
+                "& .MuiOutlinedInput-notchedOutline": { borderColor: "#555" },
+                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#777" }
+              }}
+            />
+            <DatePicker
+              label="Data Final"
+              value={filters.dataFinal}
+              onChange={(date) => onDateChange(date, 'dataFinal')}
+              format="DD/MM/YYYY"
+              slotProps={{ textField: { fullWidth: true, size: "small", variant: "outlined" } }}
+              sx={{
+                "& .MuiInputBase-input, & .MuiInputLabel-root, & .MuiSvgIcon-root": { color: "#ccc" },
                 "& .MuiOutlinedInput-notchedOutline": { borderColor: "#555" },
                 "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#777" }
               }}

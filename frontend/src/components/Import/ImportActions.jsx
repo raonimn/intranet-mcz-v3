@@ -151,10 +151,11 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
 
   const handleCloseStatusTermosModal = useCallback(() => setShowStatusTermosModal(false), []);
 
-  const handleStatusTermosImportSuccess = useCallback(() => {
-    showToast("Sucesso", "Status de termos atualizados com sucesso!", "success");
-    onProcessingChange(false, "statusTermos");
-  }, [showToast, onProcessingChange]);
+  const handleStatusTermosImportSuccess = useCallback((data) => {
+    // Agora usamos a mensagem dinâmica vinda do backend
+    showToast("Sucesso", data.message || "Status de termos atualizados com sucesso!", "success");
+    // O onProcessingChange foi removido daqui pois ele já é chamado no onImportSuccess da DadosCombinadosPage
+  }, [showToast]);
 
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
@@ -246,7 +247,7 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
       <ImportStatusTermosModal
         show={showStatusTermosModal}
         handleClose={handleCloseStatusTermosModal}
-        showToast={showToast}
+        // A prop showToast não é mais necessária aqui
         onImportSuccess={handleStatusTermosImportSuccess}
       />
     </Box>

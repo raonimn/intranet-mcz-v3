@@ -38,8 +38,12 @@ const ImportStatusTermosModal = ({ show, handleClose, onImportSuccess }) => {
         try {
             const response = await axios.post(`${BACKEND_URL}/api/upload-status-termos`, { pasted_data: pastedData });
 
-            showToast('Sucesso', response.data.message, 'success');
-            onImportSuccess();
+            // LINHAS ANTIGAS (REMOVER):
+            // showToast('Sucesso', response.data.message, 'success');
+
+            // LINHA MODIFICADA: Passe os dados de resposta para a função pai
+            onImportSuccess(response.data);
+
             logActivity('Importação de Status de Termos Finalizada', response.data, true);
             handleClose();
         } catch (error) {

@@ -104,7 +104,7 @@ const AWBTrackingModal = ({ open, onClose, loading, trackingData, internalData, 
                                 {/* Coluna da Esquerda - Dados do Rastreamento */}
                                 <Grid item xs={12} md={6}>
                                     <Typography variant="subtitle1" align="center" gutterBottom sx={{ borderBottom: 1, borderColor: 'divider', pb: 0.5, mb: 1.5 }}>
-                                        Dados da Transportadora
+                                        Dados do Rastreamento
                                     </Typography>
                                     {trackingInfo && !trackingInfo.error ? (
                                         <>
@@ -125,7 +125,7 @@ const AWBTrackingModal = ({ open, onClose, loading, trackingData, internalData, 
                                 {/* Coluna da Direita - Dados Internos */}
                                 <Grid item xs={12} md={6}>
                                     <Typography variant="subtitle1" align="center" gutterBottom sx={{ borderBottom: 1, borderColor: 'divider', pb: 0.5, mb: 1.5 }}>
-                                        Dados Internos (SEFAZ)
+                                        Dados Internos
                                     </Typography>
                                     {internalData ? (
                                         <>

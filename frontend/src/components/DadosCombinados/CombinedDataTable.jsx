@@ -20,9 +20,9 @@ import {
 
 const headCells = [
     { id: 'numero_termo', label: 'Termo' },
-    { id: 'data_emissao', label: 'Dt Emissão' },
+    { id: 'data_emissao', label: 'Emissão do Termo' },
     { id: 'awb', label: 'AWB' },
-    { id: 'fr_data_emissao', label: 'Emissão FR' },
+    { id: 'fr_data_emissao', label: 'Emissão do AWB' },
     { id: 'fr_origem', label: 'Origem' },
     { id: 'fr_destino', label: 'Destino' },
     { id: 'fr_tomador', label: 'Tomador' },
@@ -30,7 +30,7 @@ const headCells = [
     { id: 'numero_voo', label: 'Voo' },
     { id: 'chave_nfe', label: 'NFe', sortable: false },
     { id: 'chave_mdfe', label: 'MDFe', sortable: false },
-    { id: 'sefaz_status_situacao', label: 'Status' },
+    { id: 'sefaz_status_situacao', label: 'Status do Termo' },
 ];
 
 const getRowClassName = (status) => {

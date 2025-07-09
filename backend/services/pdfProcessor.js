@@ -11,34 +11,38 @@ const debugLog = (...args) => { if (LOG_DEBUG) { console.log('[DEBUG-PDF-PROCESS
 const debugWarn = (...args) => { if (LOG_DEBUG) { console.warn('[DEBUG-PDF-PROCESSOR]', ...args); } };
 const debugError = (...args) => { console.error('[ERROR-PDF-PROCESSOR]', ...args); };
 
-async function processPdfAndSaveData(pdfBuffer, numeroVoo) {
+// --- MODIFICADO ---: A assinatura da função não recebe mais 'numeroVoo'
+async function processPdfAndSaveData(pdfBuffer) {
     try {
         debugLog('--- Início de processPdfAndSaveData ---');
-        debugLog('Processando PDF para número de voo:', numeroVoo);
+        // A linha de log com 'numeroVoo' foi removida
 
         const data = await pdfParse(pdfBuffer);
         const pdfText = data.text;
-        debugLog('PDF Raw Text:\n', pdfText); // Mantenha para análise
-        debugLog('Tamanho total do texto extraído:', pdfText.length);
 
-        const extractedData = extractDataFromPdfText(pdfText);
+        // --- MODIFICADO ---: 'extractDataFromPdfText' agora retorna um objeto com os dados e o número do voo.
+        const { extractedData, numeroVoo } = extractDataFromPdfText(pdfText);
         debugLog('Dados extraídos de extractDataFromPdfText:', extractedData);
+        debugLog('Número do Voo extraído automaticamente:', numeroVoo || 'N/A');
 
         if (extractedData.length === 0) {
             debugWarn('Nenhum dado válido foi extraído do PDF. Nenhuma inserção será feita.');
-            return { success: true, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, extractedData: [], message: 'Nenhum dado válido foi extraído do PDF.' };
+            // --- MODIFICADO ---: Retornamos o numeroVoo como nulo aqui também.
+            return { success: true, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, extractedData: [], numeroVoo: null, message: 'Nenhum dado válido foi extraído do PDF.' };
         }
 
         debugLog('Iniciando inserção de dados principais em sefaz_report...');
+        // O numeroVoo extraído é passado para a função do banco de dados.
         const { insertedCount, duplicateCount, totalProcessed } = await insertSefazReportData(extractedData, numeroVoo);
         debugLog('Inserção de dados principais em sefaz_report concluída.');
 
         debugLog("Processamento do PDF e dados salvos com sucesso no MySQL.");
-        return { success: true, insertedCount, duplicateCount, totalProcessed, extractedData: extractedData, message: 'PDF processado com sucesso.' };
+        // --- MODIFICADO ---: O retorno agora inclui o 'numeroVoo' para ser usado na resposta da API.
+        return { success: true, insertedCount, duplicateCount, totalProcessed, extractedData: extractedData, numeroVoo: numeroVoo, message: 'PDF processado com sucesso.' };
 
     } catch (error) {
         debugError("Erro durante o processamento do PDF e salvamento no MySQL:", error);
-        return { success: false, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, extractedData: [], message: error.message || 'Erro desconhecido durante o processamento do PDF.' };
+        return { success: false, insertedCount: 0, duplicateCount: 0, totalProcessed: 0, extractedData: [], numeroVoo: null, message: error.message || 'Erro desconhecido durante o processamento do PDF.' };
     } finally {
         debugLog('--- Fim de processPdfAndSaveData ---');
     }
@@ -72,9 +76,11 @@ function parseAndFormatDateFromRodape(dateString) {
 }
 
 
+// --- MODIFICADO ---: A função agora retorna um objeto.
 function extractDataFromPdfText(pdf_text) {
     let tipo_pdf;
     const dados_termos_averiguacao = [];
+    let numeroVoo = null; // --- MODIFICADO ---: Variável para armazenar o número do voo.
 
     const match_relatorio = pdf_text.includes('Relatório de Termos de Averiguação dos MDF-es');
     const match_demo = pdf_text.includes('DEMO VERSION');
@@ -83,17 +89,17 @@ function extractDataFromPdfText(pdf_text) {
     const new_pattern_indicator = pdf_text.includes('Relatório de Termos de Averiguação dos MDF-es') && pdf_text.includes('Qtde de TAs:');
 
     if (new_pattern_indicator) {
-        tipo_pdf = 5; // Novo tipo para este padrão específico
+        tipo_pdf = 5;
     } else if (match_relatorio) {
-        tipo_pdf = 1; // Relatório de Termos (padrão antigo, se houver)
+        tipo_pdf = 1;
     } else if (match_demo) {
         if (match_posto) {
-            tipo_pdf = 3; // DEMO + Posto Fiscal
+            tipo_pdf = 3;
         } else {
-            tipo_pdf = 2; // DEMO normal
+            tipo_pdf = 2;
         }
     } else {
-        tipo_pdf = 4; // Tipo desconhecido (fallback)
+        tipo_pdf = 4;
     }
 
     const data_emissao_raw = extractDataOrNone(pdf_text, /Emitido pelo usuário \d+ em (\d{1,2} de [a-zA-ZçÇ]+ de \d{4} \d{2}:\d{2})/) ||
@@ -114,55 +120,46 @@ function extractDataFromPdfText(pdf_text) {
     const global_chave_mdfe = match_mdfe ? match_mdfe[1] : null;
 
     debugLog('Chave do MDF-e extraída globalmente:', global_chave_mdfe);
+
+    // --- MODIFICADO ---: Nova lógica para extrair o número do voo da chave MDFe.
+    if (global_chave_mdfe && global_chave_mdfe.length === 44) {
+        const vooDigits = global_chave_mdfe.slice(-5, -1); // Pega os 4 dígitos antes do último.
+        if (/^\d{4}$/.test(vooDigits)) { // Verifica se são realmente 4 números.
+            numeroVoo = `AD${vooDigits}`;
+        }
+    }
     
     debugLog(`Tipo de PDF detectado: ${tipo_pdf}`);
 
     if (tipo_pdf === 5) {
-        // --- NOVA ESTRATÉGIA FINAL: Capture o bloco de 4 linhas e reordene ---
-        // Padrão:
-        // Linha 1: <CHAVE_NF_E>
-        // Linha 2: <NUMERO_CT_E>
-        // Linha 3: Nº <NUMERO_TERMO> - Situação: ...
-        // Linha 4: <NUMERO_NF_E>
-
         const regexTipo5Final = new RegExp(
-            `(\\d{44})` + // Grupo 1: Chave NF-e
-            `\\s*` +    // Zero ou mais espaços/quebras de linha
-            `(\\d+)` +  // Grupo 2: Número CT-e
-            `\\s*` +    // Zero ou mais espaços/quebras de linha
-            `Nº\\s*(\\d+)\\s*-\\s*Situação:[^\\d\\r\\n]+?` + // Grupo 3: Número Termo
-            `\\s*` +    // Zero ou mais espaços/quebras de linha
-            `(\\d+)`,   // Grupo 4: Número NF-e
-            'g' // Flag global para encontrar todas as ocorrências
+            `(\\d{44})` +
+            `\\s*` +
+            `(\\d+)` +
+            `\\s*` +
+            `Nº\\s*(\\d+)\\s*-\\s*Situação:[^\\d\\r\\n]+?` +
+            `\\s*` +
+            `(\\d+)`,
+            'g'
         );
 
         termos_averiguacao_matches = [...pdf_text.matchAll(regexTipo5Final)];
-        debugLog('Matches para Tipo 5 (blocos finais):', termos_averiguacao_matches.length, termos_averiguacao_matches.map(m => m[0]));
-
         for (const match of termos_averiguacao_matches) {
-            const chave_nfe_raw = match[1];
-            const numero_cte_raw = match[2];
-            const numero_termo_raw = match[3];
-            const numero_nfe_raw = match[4];
-
-            // Reordenar para a estrutura esperada pelo banco de dados:
-            // data_emissao, chave_mdfe, numero_termo, chave_nfe, numero_cte, numero_nfe
+            const [ , chave_nfe_raw, numero_cte_raw, numero_termo_raw, numero_nfe_raw] = match;
             dados_termos_averiguacao.push([
                 data_emissao_formatada,
                 global_chave_mdfe,
-                numero_termo_raw,   // Ordem ajustada aqui
+                numero_termo_raw,
                 chave_nfe_raw,
                 numero_cte_raw,
-                numero_nfe_raw      // Ordem ajustada aqui
+                numero_nfe_raw
             ]);
         }
 
-    } else if (tipo_pdf === 1) { // Padrão original de Relatório de Termos
+    } else if (tipo_pdf === 1) { 
         termos_averiguacao_matches = [...pdf_text.matchAll(
             /(?:(\d+) - )?(?:Pendente|Pago)?\n(\d{44})\n(\d+)\n(\d+)/g
         )];
-        debugLog('Matches para Tipo 1 (original):', termos_averiguacao_matches.length);
-
         let numero_termo_anterior = '';
         for (const match of termos_averiguacao_matches) {
             const current_numero_termo = match[1] || numero_termo_anterior;
@@ -174,28 +171,26 @@ function extractDataFromPdfText(pdf_text) {
             numero_termo_anterior = current_numero_termo || '';
         }
 
-    } else if (tipo_pdf === 2) { // DEMO VERSION
+    } else if (tipo_pdf === 2) { 
         termos_averiguacao_matches = [...pdf_text.matchAll(
             /Chave da NF-e\s*[\n\r]+\s*(\d+)\s*[\n\r]+\s*(\d{44})\s*[\n\r]+\s*(\d+)\s*[\n\r]+\s*(\d+)/g
         )];
-        debugLog('Matches para Tipo 2:', termos_averiguacao_matches.length);
         for (const match of termos_averiguacao_matches) {
             dados_termos_averiguacao.push([data_emissao_formatada, global_chave_mdfe, match[4], match[2], match[1], match[3]]);
         }
 
-    } else if (tipo_pdf === 3) { // DEMO VERSION + Posto Fiscal
+    } else if (tipo_pdf === 3) {
         termos_averiguacao_matches = [...pdf_text.matchAll(
             /Nº do CT-e\s*(\d{44})\s*([\d.]+)\s*([\d.]+)\s*([\d.]+)/g
         )];
-        debugLog('Matches para Tipo 3:', termos_averiguacao_matches.length);
         for (const match of termos_averiguacao_matches) {
             dados_termos_averiguacao.push([
                 data_emissao_formatada,
                 global_chave_mdfe,
-                match[2] ? match[2].replace(/\./g, "") : '', // numero_termo
-                match[1].replace(/\./g, ""), // chave_nfe
-                match[4] ? match[4].replace(/\./g, "") : '', // numero_cte
-                match[3] ? match[3].replace(/\./g, "") : ''  // numero_nfe
+                match[2] ? match[2].replace(/\./g, "") : '',
+                match[1].replace(/\./g, ""),
+                match[4] ? match[4].replace(/\./g, "") : '',
+                match[3] ? match[3].replace(/\./g, "") : ''
             ]);
         }
     } else {
@@ -204,7 +199,9 @@ function extractDataFromPdfText(pdf_text) {
 
     const filteredData = dados_termos_averiguacao.filter(d => d && d.length === 6 && d[3] && d[3].length === 44);
     debugLog('Dados filtrados antes de retornar:', filteredData);
-    return filteredData;
+    
+    // --- MODIFICADO ---: Retorna um objeto contendo os dados e o número do voo.
+    return { extractedData: filteredData, numeroVoo };
 }
 
 module.exports = {

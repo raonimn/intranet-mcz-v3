@@ -408,7 +408,6 @@ async function getSefazReportData(filters = {}) {
             sr.data_registro,
             COALESCE(
                 (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
-                (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
                 (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
             ) AS awb,
             fr.chave_cte AS fr_chave_cte,
@@ -672,7 +671,6 @@ async function reconcileSefazReportWithFranchise(connection, specificTermo = nul
         UPDATE sefaz_report sr
         SET sr.awb = COALESCE(
             (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
-            (SELECT fr2.awb FROM franchise_report fr2 WHERE sr.numero_nfe IS NOT NULL AND sr.numero_nfe != '' AND fr2.notas IS NOT NULL AND fr2.notas != '' AND sr.numero_nfe = LTRIM(REPLACE(fr2.notas, '0', ' ')) LIMIT 1),
             (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
         )
         WHERE sr.awb IS NULL OR sr.awb = '';

@@ -154,43 +154,43 @@ async function startServer() {
 
         app.post('/api/upload-pdf', upload.single('pdf_file'), async (req, res) => {
             const file = req.file;
-            const numeroVoo = req.body.numeroVoo;
 
+            // --- MODIFICADO ---: A verificação do 'numeroVoo' foi completamente removida.
             if (!file) {
                 await insertLog({ action: 'Falha no Upload de PDF (Arquivo Ausente)', details: {}, success: false });
                 return res.status(400).json({ success: false, message: 'Nenhum arquivo PDF enviado.' });
             }
-            if (!numeroVoo || !numeroVoo.trim()) {
-                await insertLog({ action: 'Falha no Upload de PDF (Voo Ausente)', details: { file: file.originalname }, success: false });
-                return res.status(400).json({ success: false, message: 'Por favor, insira o número do voo.' });
-            }
 
-            if (LOG_DEBUG) debugLog(`[DEBUG-SERVER] PDF recebido: ${file.originalname}, Número do Voo: ${numeroVoo}`);
+            if (LOG_DEBUG) debugLog(`[DEBUG-SERVER] PDF recebido: ${file.originalname}`);
 
             try {
-                const result = await processPdfAndSaveData(file.buffer, numeroVoo);
+                // --- MODIFICADO ---: A chamada para 'processPdfAndSaveData' não passa mais 'numeroVoo'.
+                const result = await processPdfAndSaveData(file.buffer);
 
                 const formatNumber = (num) => new Intl.NumberFormat('pt-BR').format(num);
 
                 if (result.success) {
-                    await insertLog({ action: 'Importação de PDF Concluída', details: { file: file.originalname, voo: numeroVoo, inserted: result.insertedCount, duplicated: result.duplicateCount }, success: true });
+                    // --- MODIFICADO ---: A mensagem de log e a resposta para o frontend agora usam o 'numeroVoo' retornado.
+                    const vooIdentificado = result.numeroVoo || 'não identificado';
+                    await insertLog({ action: 'Importação de PDF Concluída', details: { file: file.originalname, voo: vooIdentificado, inserted: result.insertedCount, duplicated: result.duplicateCount }, success: true });
                     res.status(200).json({
                         success: true,
-                        message: `Voo ${numeroVoo} processado com sucesso.`,
+                        message: `Voo ${vooIdentificado} processado com sucesso.`,
                         recordsProcessed: result.insertedCount,
                         additionalInfo: `Inseridos ${formatNumber(result.insertedCount)} notas. (${formatNumber(result.duplicateCount)} duplicidades ignoradas).`,
                         extractedData: result.extractedData
                     });
                 } else {
-                    await insertLog({ action: 'Falha no Processamento de PDF', details: { file: file.originalname, voo: numeroVoo, message: result.message }, success: false });
+                    await insertLog({ action: 'Falha no Processamento de PDF', details: { file: file.originalname, voo: 'N/A', message: result.message }, success: false });
                     res.status(500).json({ success: false, message: result.message || 'Erro ao processar o PDF.' });
                 }
             } catch (error) {
                 debugError(`[ERROR-SERVER] Erro na rota /api/upload-pdf: ${error.message}`);
-                await insertLog({ action: 'Erro Fatal no Upload de PDF', details: { file: file.originalname, voo: numeroVoo, error: error.message }, success: false });
+                await insertLog({ action: 'Erro Fatal no Upload de PDF', details: { file: file.originalname, voo: 'N/A', error: error.message }, success: false });
                 res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
             }
         });
+
 
         app.post('/api/upload-report', upload.single('xlsx_file'), validateXlsx, async (req, res) => {
             const file = req.file;

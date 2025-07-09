@@ -7,28 +7,25 @@ import React, {
   useCallback,
 } from "react";
 import axios from "axios";
-import { Modal, Button as BSButton, Form, Row, Col } from "react-bootstrap"; // Button como BSButton para não conflitar
+import { Modal, Form } from "react-bootstrap";
 
-import { TextField, InputAdornment, Button, Box } from "@mui/material"; // Button do MUI
+import { Button, Box } from "@mui/material";
 
 import ImportStatusTermosModal from "./ImportStatusTermosModal";
-
-import useToast from '../../hooks/useToast'; // <-- IMPORTAR
-
+import useToast from '../../hooks/useToast';
 
 const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
-  const { showToast } = useToast(); // <-- USAR O HOOK
+  const { showToast } = useToast();
   const [showFranchiseModal, setShowFranchiseModal] = useState(false);
   const [showTermosModal, setShowTermosModal] = useState(false);
   const [showStatusTermosModal, setShowStatusTermosModal] = useState(false);
-
 
   const [franchiseFile, setFranchiseFile] = useState(null);
   const franchiseFileInputRef = useRef(null);
 
   const [termosFile, setTermosFile] = useState(null);
   const termosFileInputRef = useRef(null);
-  const [numeroVooInput, setNumeroVooInput] = useState("");
+  // O estado 'numeroVooInput' foi REMOVIDO מכאן
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -85,47 +82,39 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
     }
   }, [franchiseFile, onProcessingChange, handleCloseFranchiseModal, showToast, BACKEND_URL]);
 
+  // --- MODIFICADO ---
   const handleCloseTermosModal = useCallback(() => {
     setShowTermosModal(false);
     setTermosFile(null);
-    setNumeroVooInput("");
+    // A linha 'setNumeroVooInput("")' foi REMOVIDA
     if (termosFileInputRef.current) termosFileInputRef.current.value = "";
   }, []);
 
   const handleTermosFileChange = useCallback((e) => setTermosFile(e.target.files[0]), []);
 
-  const handleNumeroVooInputChange = useCallback((e) => {
-    const value = e.target.value.replace(/\D/g, "");
-    setNumeroVooInput(value.slice(0, 4));
-  }, []);
+  // A função 'handleNumeroVooInputChange' foi completamente REMOVIDA
 
+  // --- MODIFICADO ---
   const handleTermosUpload = useCallback(async (e) => {
     e.preventDefault();
     if (!termosFile) {
       showToast("Erro", "Por favor, selecione um arquivo PDF.", "danger");
       return;
     }
-    if (!numeroVooInput.trim() || numeroVooInput.length !== 4) {
-      showToast(
-        "Erro",
-        "Por favor, informe os 4 dígitos do número do Voo.",
-        "danger"
-      );
-      return;
-    }
+    // A verificação do 'numeroVooInput' foi REMOVIDA daqui
 
     onProcessingChange(true, "termos");
     handleCloseTermosModal();
 
-    const fullNumeroVoo = `AD${numeroVooInput.toUpperCase()}`;
+    // A lógica para criar 'fullNumeroVoo' foi REMOVIDA
 
     const formData = new FormData();
     formData.append("pdf_file", termosFile);
-    formData.append("numeroVoo", fullNumeroVoo);
+    // A linha formData.append("numeroVoo", fullNumeroVoo) foi REMOVIDA
 
     try {
       const response = await axios.post(
-        `${BACKEND_URL}/api/upload-pdf`,
+        `${BACKEND_URL}/api/upload-pdf`, // A rota do backend continua a mesma
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -147,14 +136,13 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
       console.error("[ImportActions] Erro no upload Termos:", error);
       onProcessingChange(false, "termos");
     }
-  }, [termosFile, numeroVooInput, onProcessingChange, handleCloseTermosModal, showToast, BACKEND_URL]);
+    // A dependência 'numeroVooInput' foi REMOVIDA do array abaixo
+  }, [termosFile, onProcessingChange, handleCloseTermosModal, showToast, BACKEND_URL]);
 
   const handleCloseStatusTermosModal = useCallback(() => setShowStatusTermosModal(false), []);
 
   const handleStatusTermosImportSuccess = useCallback((data) => {
-    // Agora usamos a mensagem dinâmica vinda do backend
     showToast("Sucesso", data.message || "Status de termos atualizados com sucesso!", "success");
-    // O onProcessingChange foi removido daqui pois ele já é chamado no onImportSuccess da DadosCombinadosPage
   }, [showToast]);
 
   return (
@@ -187,6 +175,7 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
         </Modal.Body>
       </Modal>
 
+      {/* --- MODIFICADO --- */}
       {/* Modal Termos (SEFAZ-AL) */}
       <Modal show={showTermosModal} onHide={handleCloseTermosModal} centered>
         <Modal.Header className="px-4" closeButton>
@@ -196,32 +185,7 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
         </Modal.Header>
         <Modal.Body>
           <Form onSubmit={handleTermosUpload}>
-            <Row className="mb-3 justify-content-center">
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label className="d-block text-center fw-bold">
-                    Número do Voo:
-                  </Form.Label>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={numeroVooInput}
-                    onChange={handleNumeroVooInputChange}
-                    placeholder="Ex: 1234"
-                    required
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">AD</InputAdornment>
-                      ),
-                      inputProps: {
-                        maxLength: 4,
-                        pattern: "[0-9]*",
-                      },
-                    }}
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
+            {/* O 'Row' e 'Col' com o input para o número do voo foram REMOVIDOS daqui */}
 
             <Form.Group controlId="formFileTermos" className="mb-3">
               <Form.Label className="d-block text-center fw-bold">
@@ -247,7 +211,6 @@ const ImportActions = forwardRef(({ onProcessingChange }, ref) => {
       <ImportStatusTermosModal
         show={showStatusTermosModal}
         handleClose={handleCloseStatusTermosModal}
-        // A prop showToast não é mais necessária aqui
         onImportSuccess={handleStatusTermosImportSuccess}
       />
     </Box>

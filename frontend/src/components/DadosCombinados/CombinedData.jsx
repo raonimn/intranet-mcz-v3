@@ -44,6 +44,8 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
     const [trackingData, setTrackingData] = useState(null);
     const [trackingAwb, setTrackingAwb] = useState('');
     const [isTrackingLoading, setIsTrackingLoading] = useState(false);
+    const [modalInternalData, setModalInternalData] = useState(null); // <-- ADICIONE ESTA LINHA
+
     const importActionsRef = useRef(null);
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -104,11 +106,12 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
         }
     }, [BACKEND_URL, showToast]);
 
-    const handleAwbTrack = useCallback(async (awb) => {
-        if (!awb) return;
+    const handleAwbTrack = useCallback(async (row) => { // Recebe 'row' em vez de 'awb'
+        if (!row || !row.awb) return;
 
-        const awbNumber = String(awb).slice(-8);
+        const awbNumber = String(row.awb).slice(-8);
         setTrackingAwb(awbNumber);
+        setModalInternalData(row); // <-- GUARDA OS DADOS INTERNOS
         setIsTrackingModalOpen(true);
         setIsTrackingLoading(true);
 
@@ -117,7 +120,6 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
             setTrackingData(response.data);
         } catch (err) {
             showToast('Erro de Rastreio', err.response?.data?.message || 'Não foi possível rastrear o AWB.', 'danger');
-            // Define um estado de erro para ser exibido no modal
             setTrackingData({ [awbNumber]: { error: 'Falha ao buscar dados do servidor.' } });
         } finally {
             setIsTrackingLoading(false);
@@ -126,9 +128,9 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
 
     const handleCloseTrackingModal = () => {
         setIsTrackingModalOpen(false);
-        // Limpa os dados ao fechar para a próxima abertura
         setTrackingData(null);
         setTrackingAwb('');
+        setModalInternalData(null); // <-- LIMPA OS DADOS INTERNOS
     };
 
 
@@ -270,7 +272,8 @@ const CombinedData = forwardRef(({ filters, onProcessing }, ref) => {
                 open={isTrackingModalOpen}
                 onClose={handleCloseTrackingModal}
                 loading={isTrackingLoading}
-                data={trackingData}
+                trackingData={trackingData} // Renomeado para clareza
+                internalData={modalInternalData} // <-- PASSA OS DADOS INTERNOS
                 awb={trackingAwb}
             />
         </Box>

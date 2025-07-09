@@ -88,7 +88,7 @@ const CombinedDataTable = ({ loading, items, order, orderBy, onRequestSort, onAw
                             <TableCell>{row.numero_termo || 'N/A'}</TableCell>
                             <TableCell>{row.data_emissao || 'N/A'}</TableCell>
                             <TableCell
-                                onClick={() => row.awb && onAwbClick(row.awb)}
+                                onClick={() => row.awb && onAwbClick(row)} // Modificado para passar 'row'
                                 sx={{
                                     fontWeight: 'bold',
                                     cursor: row.awb ? 'pointer' : 'default',

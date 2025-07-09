@@ -316,20 +316,24 @@ async function startServer() {
                 // A ordenação solicitada por franchise_report.data_emissao é equivalente a sefaz_report.data_emissao
                 // pois a data do termo é a referência principal. Mantemos a ordenação por sr.data_emissao.
                 const query = `
-                SELECT 
-                sr.id, sr.data_emissao, sr.chave_mdfe, sr.numero_termo, sr.chave_nfe, 
-                sr.numero_cte, sr.numero_nfe, sr.numero_voo, sr.data_registro, sr.awb, 
-                fr.chave_cte AS fr_chave_cte, fr.origem AS fr_origem, fr.destino AS fr_destino, 
-                fr.tomador AS fr_tomador, fr.notas AS fr_notas, fr.data_emissao AS fr_data_emissao, 
-                fr.destinatario AS fr_destinatario, sst.situacao AS sefaz_status_situacao
-                FROM sefaz_report sr
-                LEFT JOIN franchise_report fr ON sr.awb = fr.awb
-                LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
-                ${whereString}
-                ${havingString}
-                ORDER BY STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') DESC, sr.numero_termo ASC
-                LIMIT 1000;
+                    SELECT
+                    sr.id, sr.data_emissao, sr.chave_mdfe, sr.numero_termo, sr.chave_nfe,
+                    sr.numero_cte, sr.numero_nfe, sr.numero_voo, sr.data_registro, sr.awb,
+                    fr.chave_cte AS fr_chave_cte, fr.origem AS fr_origem, fr.destino AS fr_destino,
+                    fr.tomador AS fr_tomador, fr.notas AS fr_notas, fr.data_emissao AS fr_data_emissao,
+                    fr.destinatario AS fr_destinatario,
+                    sst.situacao AS sefaz_status_situacao,
+                    sst.valor AS sefaz_valor_termo,          -- <<-- CAMPO ADICIONADO
+                    sst.data_status AS sefaz_data_termo      -- <<-- CAMPO ADICIONADO
+                    FROM sefaz_report sr
+                    LEFT JOIN franchise_report fr ON sr.awb = fr.awb
+                    LEFT JOIN sefaz_status_termos sst ON sr.numero_termo = sst.numero_termo
+                    ${whereString}
+                    ${havingString}
+                    ORDER BY STR_TO_DATE(sr.data_emissao, '%d/%m/%Y') DESC, sr.numero_termo ASC
+                    LIMIT 1000;
                 `;
+
 
                 const finalParams = params.concat(havingParams);
 

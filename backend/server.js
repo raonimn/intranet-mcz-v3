@@ -73,6 +73,8 @@ const corsOptions = {
             /^https?:\/\/localhost(:\d+)?$/,
             /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
             /^https?:\/\/intranet(:\d+)?$/,
+            /^https?:\/\/100\.108\.190\.6(:\d+)?$/,
+            /^https?:\/\/100\.88\.45\.10(:\d+)?$/,
         ];
 
         const isAllowed = allowedIpPatterns.some(pattern => {
@@ -89,7 +91,7 @@ const corsOptions = {
             callback(new Error('Not allowed by CORS'));
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true
 };

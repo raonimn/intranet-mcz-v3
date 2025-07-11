@@ -19,10 +19,11 @@ async function processPdfAndSaveData(pdfBuffer) {
 
         const data = await pdfParse(pdfBuffer);
         const pdfText = data.text;
+        debugLog('Dados extraídos:', pdfText || 'N/A');
 
         // --- MODIFICADO ---: 'extractDataFromPdfText' agora retorna um objeto com os dados e o número do voo.
         const { extractedData, numeroVoo } = extractDataFromPdfText(pdfText);
-        debugLog('Dados extraídos de extractDataFromPdfText:', extractedData);
+        //debugLog('Dados extraídos de extractDataFromPdfText:', extractedData);
         debugLog('Número do Voo extraído automaticamente:', numeroVoo || 'N/A');
 
         if (extractedData.length === 0) {
@@ -80,13 +81,14 @@ function parseAndFormatDateFromRodape(dateString) {
 function extractDataFromPdfText(pdf_text) {
     let tipo_pdf;
     const dados_termos_averiguacao = [];
-    let numeroVoo = null; // --- MODIFICADO ---: Variável para armazenar o número do voo.
+    let numeroVoo = null;
 
     const match_relatorio = pdf_text.includes('Relatório de Termos de Averiguação dos MDF-es');
     const match_demo = pdf_text.includes('DEMO VERSION');
     const match_posto = pdf_text.includes('Posto Fiscal: CENTRAL DAS TRANSPORTADORAS');
-    
-    const new_pattern_indicator = pdf_text.includes('Relatório de Termos de Averiguação dos MDF-es') && pdf_text.includes('Qtde de TAs:');
+
+    // Corrigido para incluir 'TAS' (com S) que aparece em alguns PDFs
+    const new_pattern_indicator = pdf_text.includes('Relatório de Termos de Averiguação dos MDF-es') && (pdf_text.includes('Qtde de TAs:') || pdf_text.includes('Qtde de TAS:'));
 
     if (new_pattern_indicator) {
         tipo_pdf = 5;
@@ -103,8 +105,8 @@ function extractDataFromPdfText(pdf_text) {
     }
 
     const data_emissao_raw = extractDataOrNone(pdf_text, /Emitido pelo usuário \d+ em (\d{1,2} de [a-zA-ZçÇ]+ de \d{4} \d{2}:\d{2})/) ||
-                             extractDataOrNone(pdf_text, /Data de Emissão\s*[\n\r]+\s*(\d{2}\/\d{2}\/\d{4})/) ||
-                             extractDataOrNone(pdf_text, /Data:(\d{2}\/\d{2}\/\d{4})/);
+        extractDataOrNone(pdf_text, /Data de Emissão\s*[\n\r]+\s*(\d{2}\/\d{2}\/\d{4})/) ||
+        extractDataOrNone(pdf_text, /Data:(\d{2}\/\d{2}\/\d{4})/);
 
     let data_emissao_formatada = null;
     if (data_emissao_raw) {
@@ -121,43 +123,69 @@ function extractDataFromPdfText(pdf_text) {
 
     debugLog('Chave do MDF-e extraída globalmente:', global_chave_mdfe);
 
-    // --- MODIFICADO ---: Nova lógica para extrair o número do voo da chave MDFe.
     if (global_chave_mdfe && global_chave_mdfe.length === 44) {
-        const vooDigits = global_chave_mdfe.slice(-5, -1); // Pega os 4 dígitos antes do último.
-        if (/^\d{4}$/.test(vooDigits)) { // Verifica se são realmente 4 números.
+        const vooDigits = global_chave_mdfe.slice(-5, -1);
+        if (/^\d{4}$/.test(vooDigits)) {
             numeroVoo = `AD${vooDigits}`;
         }
     }
+
+    console.log(`Tipo de PDF detectado: ${tipo_pdf}`);
     
-    debugLog(`Tipo de PDF detectado: ${tipo_pdf}`);
-
     if (tipo_pdf === 5) {
-        const regexTipo5Final = new RegExp(
-            `(\\d{44})` +
-            `\\s*` +
-            `(\\d+)` +
-            `\\s*` +
-            `Nº\\s*(\\d+)\\s*-\\s*Situação:[^\\d\\r\\n]+?` +
-            `\\s*` +
-            `(\\d+)`,
-            'g'
-        );
+        // --- LÓGICA FINAL BASEADA NOS PADRÕES DE 3 E 4 LINHAS ---
+        const lines = pdf_text.split('\n').map(line => line.trim()).filter(line => line); // Limpa e filtra linhas vazias
 
-        termos_averiguacao_matches = [...pdf_text.matchAll(regexTipo5Final)];
-        for (const match of termos_averiguacao_matches) {
-            const [ , chave_nfe_raw, numero_cte_raw, numero_termo_raw, numero_nfe_raw] = match;
-            dados_termos_averiguacao.push([
-                data_emissao_formatada,
-                global_chave_mdfe,
-                numero_termo_raw,
-                chave_nfe_raw,
-                numero_cte_raw,
-                numero_nfe_raw
-            ]);
+        let numero_termo_atual = '';
+        let i = 0;
+
+        const chaveRegex = /^\d{44}$/;
+        const numeroRegex = /^\d+$/;
+        const termoRegex = /^N[º°]\s*(\d+)\s*-\s*Situação:/;
+
+        while (i < lines.length) {
+            // Tenta corresponder ao padrão de 4 linhas (com termo)
+            if (i + 3 < lines.length &&
+                lines[i].match(chaveRegex) &&
+                lines[i + 1].match(numeroRegex) &&
+                lines[i + 2].match(termoRegex) &&
+                lines[i + 3].match(numeroRegex)) {
+                const chave_nfe = lines[i];
+                const numero_cte = lines[i + 1];
+                const termoMatch = lines[i + 2].match(termoRegex);
+                numero_termo_atual = termoMatch[1]; // Atualiza o termo atual
+                const numero_nfe = lines[i + 3];
+
+                dados_termos_averiguacao.push([
+                    data_emissao_formatada, global_chave_mdfe, numero_termo_atual, chave_nfe, numero_cte, numero_nfe
+                ]);
+                i += 4; // Avança 4 linhas
+            }
+            // Tenta corresponder ao padrão de 3 linhas (sem termo)
+            else if (i + 2 < lines.length &&
+                lines[i].match(chaveRegex) &&
+                lines[i + 1].match(numeroRegex) &&
+                lines[i + 2].match(numeroRegex)) {
+                const chave_nfe = lines[i];
+                const numero_cte = lines[i + 1];
+                const numero_nfe = lines[i + 2];
+
+                // Usa o último termo encontrado
+                if (numero_termo_atual) {
+                    dados_termos_averiguacao.push([
+                        data_emissao_formatada, global_chave_mdfe, numero_termo_atual, chave_nfe, numero_cte, numero_nfe
+                    ]);
+                }
+                i += 3; // Avança 3 linhas
+            }
+            // Se nenhum padrão corresponder, avança 1 para evitar loop infinito
+            else {
+                i++;
+            }
         }
-
-    } else if (tipo_pdf === 1) { 
-        termos_averiguacao_matches = [...pdf_text.matchAll(
+    } else if (tipo_pdf === 1) {
+        // Lógica para o tipo 1 (que já estava funcionando)
+        const termos_averiguacao_matches = [...pdf_text.matchAll(
             /(?:(\d+) - )?(?:Pendente|Pago)?\n(\d{44})\n(\d+)\n(\d+)/g
         )];
         let numero_termo_anterior = '';
@@ -166,13 +194,13 @@ function extractDataFromPdfText(pdf_text) {
             const chave_nfe = match[2];
             const numero_nfe = match[3];
             const numero_cte = match[4];
-            
+
             dados_termos_averiguacao.push([data_emissao_formatada, global_chave_mdfe, current_numero_termo, chave_nfe, numero_cte, numero_nfe]);
             numero_termo_anterior = current_numero_termo || '';
         }
 
-    } else if (tipo_pdf === 2) { 
-        termos_averiguacao_matches = [...pdf_text.matchAll(
+    } else if (tipo_pdf === 2) {
+        const termos_averiguacao_matches = [...pdf_text.matchAll(
             /Chave da NF-e\s*[\n\r]+\s*(\d+)\s*[\n\r]+\s*(\d{44})\s*[\n\r]+\s*(\d+)\s*[\n\r]+\s*(\d+)/g
         )];
         for (const match of termos_averiguacao_matches) {
@@ -180,7 +208,7 @@ function extractDataFromPdfText(pdf_text) {
         }
 
     } else if (tipo_pdf === 3) {
-        termos_averiguacao_matches = [...pdf_text.matchAll(
+        const termos_averiguacao_matches = [...pdf_text.matchAll(
             /Nº do CT-e\s*(\d{44})\s*([\d.]+)\s*([\d.]+)\s*([\d.]+)/g
         )];
         for (const match of termos_averiguacao_matches) {
@@ -198,11 +226,13 @@ function extractDataFromPdfText(pdf_text) {
     }
 
     const filteredData = dados_termos_averiguacao.filter(d => d && d.length === 6 && d[3] && d[3].length === 44);
-    debugLog('Dados filtrados antes de retornar:', filteredData);
-    
-    // --- MODIFICADO ---: Retorna um objeto contendo os dados e o número do voo.
+    debugLog('Dados filtrados antes de retornar (Total):', filteredData.length);
+
     return { extractedData: filteredData, numeroVoo };
 }
+
+
+
 
 module.exports = {
     processPdfAndSaveData,

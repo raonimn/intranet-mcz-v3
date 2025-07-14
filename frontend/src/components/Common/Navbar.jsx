@@ -40,6 +40,7 @@ function Navbar() {
             </Box>
           </Box>
         </NavLink>
+        <div>Versão 0.4.2.1</div>
         <Box sx={{ flexGrow: 1 }} />
       </Toolbar>
     </AppBar>

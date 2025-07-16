@@ -5,6 +5,9 @@ import { NavLink } from "react-router-dom";
 import { AppBar, Toolbar, Typography, Box } from "@mui/material";
 
 function Navbar() {
+
+  const version = import.meta.env.VITE_INTRANET_VERSION;
+
   return (
     <AppBar position="static" color="primary">
       {" "}
@@ -38,10 +41,25 @@ function Navbar() {
                 }}
               />
             </Box>
+            <Typography variant="h6" noWrap>
+              Intranet
+            </Typography>
           </Box>
         </NavLink>
-        <div>Versão 0.4.2.1</div>
+        {/* Espaço expansivo para empurrar a versão para a direita */}
         <Box sx={{ flexGrow: 1 }} />
+        {/* Versão do sistema no canto direito */}
+        <Typography
+          variant="caption"
+          color="inherit"
+          sx={{
+            opacity: 0.7,
+            fontSize: "0.75rem",
+            marginRight: "10px",
+          }}
+        >
+          v{version}
+        </Typography>
       </Toolbar>
     </AppBar>
   );

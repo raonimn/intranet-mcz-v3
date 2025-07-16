@@ -669,10 +669,9 @@ async function reconcileSefazReportWithFranchise(connection, specificTermo = nul
 
   let query = `
         UPDATE sefaz_report sr
-        SET sr.awb = COALESCE(
-            (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1),
-            (SELECT fr_parcial.awb FROM franchise_report fr_parcial WHERE fr_parcial.chave_cte LIKE CONCAT('%', sr.numero_cte, '%') AND LENGTH(sr.numero_cte) > 0 LIMIT 1)
-        )
+        SET sr.awb = 
+            (SELECT fr1.awb FROM franchise_report fr1 WHERE LPAD(sr.numero_cte, 9, '0') = SUBSTR(fr1.chave_cte, 26, 9) LIMIT 1)
+        
         WHERE sr.awb IS NULL OR sr.awb = '';
     `;
   const params = [];
